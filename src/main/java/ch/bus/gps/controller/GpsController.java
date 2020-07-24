@@ -16,7 +16,7 @@ import ch.bus.gps.dto.GpsDTO;
 import ch.bus.gps.service.GpsService;
 
 @RestController
-@RequestMapping("/gps")
+@RequestMapping("/api/gps")
 public class GpsController {
 
   @Autowired
