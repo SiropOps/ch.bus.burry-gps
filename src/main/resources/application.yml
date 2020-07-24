@@ -1,0 +1,34 @@
+server:
+  port: 8011
+  
+logging:
+  level:
+    org:
+#      hibernate:
+#        SQL: DEBUG
+#        type:
+#          descriptor:
+#            sql:
+#              BasicBinder: TRACE
+      springframework:
+        web: INFO
+    root: WARN
+spring:
+  application:
+    name: burry-gps
+  banner:
+    location: classpath:/static/bannername.txt
+  jpa:
+    open-in-view: false
+    database-platform: org.hibernate.dialect.PostgreSQL9Dialect
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.spatial.dialect.postgis.PostgisDialect
+        format_sql: true
+#        show_sql: true
+        temp:
+          use_jdbc_metadata_defaults: false
+
+

@@ -1,0 +1,11 @@
+version: '3'
+
+services:
+  burry-gps-db:
+    build: .
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=gps_buffer
+      - POSTGRES_USER=gps_buffer_user
+      - POSTGRES_PASSWORD=gps_buffer_pass
