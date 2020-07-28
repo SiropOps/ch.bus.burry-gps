@@ -23,7 +23,7 @@ sys.path.insert(0, "/usr/local/bin")
 
 # Deafults
 LOG_LEVEL = logging.INFO  # Could be e.g. "DEBUG" or "WARNING"
-LOG_FILENAME = "/app/pgps.log"
+LOG_FILENAME = "/app/fail/pgps.log"
 
 FAIL_DIR = "/app/fail/"
 
@@ -64,9 +64,9 @@ console.setFormatter(formatter)
 logger.addHandler(console) 
 
 # Replace stdout with logging to file at INFO level
-# sys.stdout = MyLogger(logger, logging.INFO)
+sys.stdout = MyLogger(logger, logging.INFO)
 # Replace stderr with logging to file at ERROR level
-# sys.stderr = MyLogger(logger, logging.ERROR)
+sys.stderr = MyLogger(logger, logging.ERROR)
 
 
 class Data(object): 
@@ -102,7 +102,6 @@ class Data(object):
 
 gpsd = None  # seting the global variable
 
-
 class GpsPoller(threading.Thread):
 
     def __init__(self):
@@ -116,13 +115,12 @@ class GpsPoller(threading.Thread):
         while self.running:
             gpsd.next()  # this will continue to loop and grab EACH set of gpsd info to clear the buffer
 
-
 def failOver():
     try:
         logger.info('failOver Started Script')
         gpsp.start()  # start it up
         for _ in itertools.repeat(None, 300):  # repeat 5 minutes
-            with open(FAIL_DIR + str(uuid.uuid1()) + '.json', 'w') as outfile:
+            with open(FAIL_DIR + str(uuid.uuid1()) + '.pgps.json', 'w') as outfile:
                 json.dump(Data(gpsd).__dict__, outfile)
                 time.sleep(1)  # set to whatever
         gpsp.running = False
@@ -131,13 +129,12 @@ def failOver():
         logger.error('failOver error: ' + str(e))
         gpsp.running = False
 
-
 def failBack(channel):
     try:
         logger.info('failBack Started Script')
         for file in os.listdir(FAIL_DIR):
             try:
-                if file.endswith(".json"):
+                if file.endswith(".pgps.json"):
                     data = json.load(open(FAIL_DIR + file, 'r'))
                     channel.basic_publish(exchange='',
                                           routing_key='gps',
