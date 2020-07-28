@@ -6,6 +6,7 @@ Created on 14 sept. 2019
 @author: SiropOps
 
 '''
+import itertools
 import json
 import logging.handlers
 import os
@@ -13,17 +14,19 @@ import sys, traceback
 import threading
 from time import strftime, gmtime
 import time
+import uuid
 
 from gps import *
 import pika
-import itertools
-import uuid
+
 
 sys.path.insert(0, "/usr/local/bin")
 
 # Deafults
 LOG_LEVEL = logging.INFO  # Could be e.g. "DEBUG" or "WARNING"
 LOG_FILENAME = "/app/pgps.log"
+
+FAIL_DIR = "/app/fail/"
 
 
 class MyLogger(object):
@@ -120,7 +123,7 @@ def failOver():
         logger.info('failOver Started Script')
         gpsp.start()  # start it up
         for _ in itertools.repeat(None, 300):  # repeat 5 minutes
-            with open('/app/fail/' + str(uuid.uuid1()) + '.json', 'w') as outfile:
+            with open(FAIL_DIR + str(uuid.uuid1()) + '.json', 'w') as outfile:
                 json.dump(Data(gpsd).__dict__, outfile)
                 time.sleep(1)  # set to whatever
         gpsp.running = False
@@ -130,23 +133,17 @@ def failOver():
         gpsp.running = False
 
 
-def object_decoder(obj):
-    if '__type__' in obj and obj['__type__'] == 'User':
-        return User(obj['name'], obj['username'])
-    return obj
-
-
 def failBack(channel):
     try:
         logger.info('failBack Started Script')
-        for file in os.listdir("/app/fail"):
+        for file in os.listdir(FAIL_DIR):
             if file.endswith(".json"):
-                data = json.load(file)
+                data = json.load(open(FAIL_DIR + file, r))
                 channel.basic_publish(exchange='',
                             routing_key='gps',
                             properties=pika.BasicProperties(content_type='application/json'),
                             body=json.dumps(data)) 
-                os.remove(file.name)
+                os.remove(FAIL_DIR + file)
     except Exception as e:
         logger.error('failBack error: ' + str(e))
 
@@ -179,8 +176,9 @@ if __name__ == '__main__':
                     logger.error('RabbitMQ is not connected at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
                     failOver()
                     sys.exit(os.EX_SOFTWARE)
-            except Exception:
+            except Exception as e:
                 logger.error('RabbitMQ connection is fail at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
+                logger.error(str(e))
                 failOver()
                 sys.exit(os.EX_SOFTWARE)
         
