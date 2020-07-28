@@ -140,10 +140,10 @@ if __name__ == '__main__':
                     logger.info('RabbitMQ is started at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
                 else:
                     logger.error('RabbitMQ is not connected at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
-                    sys.exit(-1)
+                    sys.exit(os.EX_SOFTWARE)
             except Exception:
                 logger.error('RabbitMQ connection is fail at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
-                sys.exit(-1)
+                sys.exit(os.EX_SOFTWARE)
             
         
             gpsp.start()  # start it up
