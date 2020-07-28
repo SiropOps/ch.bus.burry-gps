@@ -120,16 +120,14 @@ def failOver():
         logger.info('failOver Started Script')
         gpsp.start()  # start it up
         for _ in itertools.repeat(None, 300):  # repeat 5 minutes
-            with open('/app/fail/' + uuid.uuid1() + '.json', 'w') as outfile:
+            with open('/app/fail/' + str(uuid.uuid1()) + '.json', 'w') as outfile:
                 json.dump(Data(gpsd).__dict__, outfile)
                 time.sleep(1)  # set to whatever
         gpsp.running = False
-        gpsp.join()  # wait for the thread to finish what it's doing
-        connection.close()
         logger.info("failOver is done.\nExiting. at " + strftime("%d-%m-%Y %H:%M:%S", gmtime()));
     except Exception as e:
         logger.error('failOver error: ' + str(e))
-        sys.exit(os.EX_SOFTWARE)
+        gpsp.running = False
 
 
 def object_decoder(obj):
@@ -202,4 +200,6 @@ if __name__ == '__main__':
         
         except Exception as e:
             logger.error('General error: ' + str(e))
+            gpsp.running = False
+            gpsp.join()  # wait for the thread to finish what it's doing
             sys.exit(os.EX_SOFTWARE)
