@@ -18,7 +18,7 @@ import uuid
 
 from gps import *
 import pika
-
+from symbol import except_clause
 
 sys.path.insert(0, "/usr/local/bin")
 
@@ -137,13 +137,16 @@ def failBack(channel):
     try:
         logger.info('failBack Started Script')
         for file in os.listdir(FAIL_DIR):
-            if file.endswith(".json"):
-                data = json.load(open(FAIL_DIR + file, 'r'))
-                channel.basic_publish(exchange='',
-                            routing_key='gps',
-                            properties=pika.BasicProperties(content_type='application/json'),
-                            body=json.dumps(data)) 
-                os.remove(FAIL_DIR + file)
+            try:
+                if file.endswith(".json"):
+                    data = json.load(open(FAIL_DIR + file, 'r'))
+                    channel.basic_publish(exchange='',
+                                          routing_key='gps',
+                                          properties=pika.BasicProperties(content_type='application/json'),
+                                          body=json.dumps(data)) 
+                    os.remove(FAIL_DIR + file)
+            except Exception as e:
+                logger.error('file ' + file + ' error: ' + str(e))
     except Exception as e:
         logger.error('failBack error: ' + str(e))
 
