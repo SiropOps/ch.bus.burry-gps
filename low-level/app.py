@@ -145,7 +145,8 @@ def failBack(channel):
                                           body=json.dumps(data)) 
                     os.remove(FAIL_DIR + file)
             except Exception as e:
-                logger.error('file ' + file + 'error: ' + str(e))
+                logger.error('file ' + file + ' error: ' + str(e))
+                os.remove(FAIL_DIR + file)
     except Exception as e:
         logger.error('failBack error: ' + str(e))
 
