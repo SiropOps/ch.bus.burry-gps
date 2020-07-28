@@ -16,7 +16,8 @@ import time
 
 from gps import *
 import pika
-
+import itertools
+import uuid
 
 sys.path.insert(0, "/usr/local/bin")
 
@@ -114,6 +115,44 @@ class GpsPoller(threading.Thread):
             gpsd.next()  # this will continue to loop and grab EACH set of gpsd info to clear the buffer
 
 
+def failOver():
+    try:
+        logger.info('failOver Started Script')
+        gpsp.start()  # start it up
+        for _ in itertools.repeat(None, 300):  # repeat 5 minutes
+            with open('/app/fail/' + uuid.uuid1() + '.json', 'w') as outfile:
+                json.dump(Data(gpsd).__dict__, outfile)
+                time.sleep(1)  # set to whatever
+        gpsp.running = False
+        gpsp.join()  # wait for the thread to finish what it's doing
+        connection.close()
+        logger.info("failOver is done.\nExiting. at " + strftime("%d-%m-%Y %H:%M:%S", gmtime()));
+    except Exception:
+        logger.error('failOver error: ' + str(e))
+        sys.exit(os.EX_SOFTWARE)
+
+
+def object_decoder(obj):
+    if '__type__' in obj and obj['__type__'] == 'User':
+        return User(obj['name'], obj['username'])
+    return obj
+
+
+def failBack(channel):
+    try:
+        logger.info('failBack Started Script')
+        for file in os.listdir("/app/fail"):
+            if file.endswith(".json"):
+                data = json.load(file)
+                channel.basic_publish(exchange='',
+                            routing_key='gps',
+                            properties=pika.BasicProperties(content_type='application/json'),
+                            body=json.dumps(data)) 
+                os.remove(file.name)
+    except Exception:
+        logger.error('failBack error: ' + str(e))
+
+
 logger.info('Start Script at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
 os.system('dpkg-reconfigure gpsd')
 os.system('gpsd /dev/ttyUSB0 -F /var/run/gpsd.sock')
@@ -140,13 +179,15 @@ if __name__ == '__main__':
                     logger.info('RabbitMQ is started at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
                 else:
                     logger.error('RabbitMQ is not connected at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
+                    failOver()
                     sys.exit(os.EX_SOFTWARE)
             except Exception:
                 logger.error('RabbitMQ connection is fail at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
+                failOver()
                 sys.exit(os.EX_SOFTWARE)
-            
         
             gpsp.start()  # start it up
+            failBack(channel)
             while True:
                 channel.basic_publish(exchange='',
                             routing_key='gps',
@@ -160,4 +201,4 @@ if __name__ == '__main__':
             logger.info("Done.\nExiting. at " + strftime("%d-%m-%Y %H:%M:%S", gmtime()));
         
         except Exception as e:
-            logger.error('Failed to do something: ' + str(e))
+            logger.error('General error: ' + str(e))
