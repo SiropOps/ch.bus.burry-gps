@@ -127,7 +127,7 @@ def failOver():
         gpsp.join()  # wait for the thread to finish what it's doing
         connection.close()
         logger.info("failOver is done.\nExiting. at " + strftime("%d-%m-%Y %H:%M:%S", gmtime()));
-    except Exception:
+    except Exception as e:
         logger.error('failOver error: ' + str(e))
         sys.exit(os.EX_SOFTWARE)
 
@@ -149,7 +149,7 @@ def failBack(channel):
                             properties=pika.BasicProperties(content_type='application/json'),
                             body=json.dumps(data)) 
                 os.remove(file.name)
-    except Exception:
+    except Exception as e:
         logger.error('failBack error: ' + str(e))
 
 
