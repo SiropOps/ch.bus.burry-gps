@@ -195,7 +195,7 @@ if __name__ == '__main__':
             gpsp.join()  # wait for the thread to finish what it's doing
             connection.close()
             logger.info("Done.\nExiting. at " + strftime("%d-%m-%Y %H:%M:%S", gmtime()));
-        
+            sys.exit(os.EX_SOFTWARE)
         except Exception as e:
             logger.error('General error: ' + str(e))
             gpsp.running = False
