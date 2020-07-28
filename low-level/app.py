@@ -18,7 +18,6 @@ import uuid
 
 from gps import *
 import pika
-from symbol import except_clause
 
 sys.path.insert(0, "/usr/local/bin")
 
@@ -146,7 +145,7 @@ def failBack(channel):
                                           body=json.dumps(data)) 
                     os.remove(FAIL_DIR + file)
             except Exception as e:
-                logger.error('file ' + file + ' error: ' + str(e))
+                logger.error('file ' + file + 'error: ' + str(e))
     except Exception as e:
         logger.error('failBack error: ' + str(e))
 
