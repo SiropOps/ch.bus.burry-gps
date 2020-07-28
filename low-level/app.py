@@ -138,7 +138,7 @@ def failBack(channel):
         logger.info('failBack Started Script')
         for file in os.listdir(FAIL_DIR):
             if file.endswith(".json"):
-                data = json.load(open(FAIL_DIR + file, r))
+                data = json.load(open(FAIL_DIR + file, 'r'))
                 channel.basic_publish(exchange='',
                             routing_key='gps',
                             properties=pika.BasicProperties(content_type='application/json'),
