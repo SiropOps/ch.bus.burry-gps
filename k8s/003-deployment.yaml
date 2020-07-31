@@ -28,7 +28,10 @@ spec:
     spec:
       volumes:
       - name: gps-properties
-        emptyDir: {}
+        configMap:
+          name: gps-config-map
+#      - name: gps-properties
+#        emptyDir: {}
       containers:
       - name: gps
         image: siropops/burry-gps:0.0.1-SNAPSHOT
@@ -46,13 +49,18 @@ spec:
         volumeMounts:
         - name: gps-properties
           mountPath: /app/properties
-      initContainers:
-      - name: gps-init
-        image: siropops/burry-gps-confd:0.0.1-SNAPSHOT
-        imagePullPolicy: IfNotPresent
-        envFrom:
-        - configMapRef:
-            name: gps-config-map
-        volumeMounts:
-        - name: gps-properties
-          mountPath: /app/properties
+          readOnly: true
+#        volumeMounts:
+#        - name: gps-properties
+#          mountPath: /app/properties
+#          readOnly: true
+#      initContainers:
+#      - name: gps-init
+#        image: siropops/burry-gps-confd:0.0.1-SNAPSHOT
+#        imagePullPolicy: IfNotPresent
+#        envFrom:
+#        - configMapRef:
+#            name: gps-config-map
+#        volumeMounts:
+#        - name: gps-properties
+#          mountPath: /app/properties
