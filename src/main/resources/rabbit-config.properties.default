@@ -1,1 +1,4 @@
-com.botalista.rabbitmq.queue.instance=SM-BOTALISTA-LOCAL
+spring.rabbitmq.host=<HOST>
+spring.rabbitmq.port=<PORT>
+spring.rabbitmq.username=<USERNAME>
+spring.rabbitmq.password=<PASSWORD>

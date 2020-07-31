@@ -1,0 +1,9 @@
+[template]
+src = "rabbit-config.conf.tmpl"
+dest = "/app/properties/rabbit-config.properties"
+keys = [
+    "/spring/rabbitmq/host",
+    "/spring/rabbitmq/port",
+    "/spring/rabbitmq/username",
+    "/spring/rabbitmq/password"
+]

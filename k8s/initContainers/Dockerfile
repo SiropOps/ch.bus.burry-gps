@@ -1,0 +1,21 @@
+FROM centos:8
+
+LABEL maintainer="SiropOps <Cyril.Boillat@gmail.com>"
+
+ENV TZ=Europe/Zurich
+
+RUN yum -y update && yum install -y wget vim  && \
+	wget https://github.com/kelseyhightower/confd/releases/download/v0.16.0/confd-0.16.0-linux-arm64 && \
+	mkdir -p /opt/confd/bin && \
+	mv confd-0.16.0-linux-arm64 /opt/confd/bin/confd && \
+	chmod +x /opt/confd/bin/confd && \
+	export PATH="$PATH:/opt/confd/bin" && \
+	mkdir -p /etc/confd/{conf.d,templates}
+
+ADD ./credentials.toml /etc/confd/conf.d/credentials.toml
+ADD ./credentials.conf.tmpl /etc/confd/templates/credentials.conf.tmpl
+
+ADD ./rabbit-config.toml /etc/confd/conf.d/rabbit-config.toml
+ADD ./rabbit-config.conf.tmpl /etc/confd/templates/rabbit-config.conf.tmpl
+
+CMD ["confd", "-onetime", "-backend", "env"]
