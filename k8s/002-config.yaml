@@ -4,11 +4,13 @@ metadata:
   name: gps-config-map
   namespace: burry
 data:
-  credentials.properties: |-
+  credentials.properties: |
+    FILE=true
     SPRING_DATASOURCE_URL=jdbc:postgresql://[HOST]:[PORT]/[DATABASE]
     SPRING_DATASOURCE_USERNAME=<USERNAME>
     SPRING_DATASOURCE_PASSWORD=<PASSWORD>
-  rabbit-config.properties: |-
+  rabbit-config.properties: |
+    FILE=true
     SPRING_RABBITMQ_HOST=<HOST>
     SPRING_RABBITMQ_PORT=<PORT>
     SPRING_RABBITMQ_USERNAME=<USERNAME>
