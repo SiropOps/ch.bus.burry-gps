@@ -1,0 +1,14 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ingressroute-gps
+  namespace: burry
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`<IP>`) && PathPrefix(`/api/gps`)  
+    kind: Rule
+    services:
+    - name: gps
+      port: 8011

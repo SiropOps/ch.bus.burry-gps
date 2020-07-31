@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gps-config-map
+  namespace: burry
+data:
+  credentials.properties: |-
+    spring.datasource.url=jdbc:postgresql://[HOST]:[PORT]/[DATABASE]
+    spring.datasource.username=<USERNAME>
+    spring.datasource.password=<PASSWORD>
+  rabbit-config.properties: |-
+    spring.rabbitmq.host=<HOST>
+    spring.rabbitmq.port=<PORT>
+    spring.rabbitmq.username=<USERNAME>
+    spring.rabbitmq.password=<PASSWORD>
