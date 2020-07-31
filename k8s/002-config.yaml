@@ -5,11 +5,11 @@ metadata:
   namespace: burry
 data:
   credentials.properties: |-
-    spring.datasource.url=jdbc:postgresql://[HOST]:[PORT]/[DATABASE]
-    spring.datasource.username=<USERNAME>
-    spring.datasource.password=<PASSWORD>
+    SPRING_DATASOURCE_URL=jdbc:postgresql://[HOST]:[PORT]/[DATABASE]
+    SPRING_DATASOURCE_USERNAME=<USERNAME>
+    SPRING_DATASOURCE_PASSWORD=<PASSWORD>
   rabbit-config.properties: |-
-    spring.rabbitmq.host=<HOST>
-    spring.rabbitmq.port=<PORT>
-    spring.rabbitmq.username=<USERNAME>
-    spring.rabbitmq.password=<PASSWORD>
+    SPRING_RABBITMQ_HOST=<HOST>
+    SPRING_RABBITMQ_PORT=<PORT>
+    SPRING_RABBITMQ_USERNAME=<USERNAME>
+    SPRING_RABBITMQ_PASSWORD=<PASSWORD>

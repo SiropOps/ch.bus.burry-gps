@@ -50,8 +50,9 @@ spec:
       - name: gps-init
         image: siropops/burry-gps-confd:0.0.1-SNAPSHOT
         imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: gps-config-map
         volumeMounts:
         - name: gps-properties
           mountPath: /app/properties
-          
-          
