@@ -43,7 +43,8 @@ class MyLogger(object):
         if message.rstrip() != "":
             self.logger.log(self.level, message.rstrip())
 
-
+    def flush(self):
+        pass
 # Configure logging to log to a file, making a new file at midnight and keeping the last 3 day's data
 # Give the logger a unique name (good practice)
 logger = logging.getLogger(__name__)
