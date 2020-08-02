@@ -153,7 +153,7 @@ logger.info('Start Script at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
 os.system('dpkg-reconfigure gpsd')
 os.system('gpsd /dev/ttyUSB0 -F /var/run/gpsd.sock')
 
-time.sleep(60)
+time.sleep(300)
 
 logger.info('Sleep end at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
 
