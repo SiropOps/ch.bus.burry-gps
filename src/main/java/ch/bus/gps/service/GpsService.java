@@ -1,6 +1,7 @@
 package ch.bus.gps.service;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ch.bus.gps.dto.GpsDTO;
+import ch.bus.gps.dto.SpeakingClockDTO;
 import ch.bus.gps.entity.Pgps;
 import ch.bus.gps.repository.PgpsRepository;
 
@@ -104,6 +106,17 @@ public class GpsService {
 
   public List<GpsDTO> getAll() {
     return CACHED_TRIPE;
+  }
+
+  public SpeakingClockDTO getSpeakingClock() {
+
+    Pgps pgps = this.pgpsRepository.getLast();
+    Date date = new Date();
+
+    if (pgps != null && pgps.getTime() != null)
+      date = pgps.getTime();
+
+    return new SpeakingClockDTO(date);
   }
 
 }
