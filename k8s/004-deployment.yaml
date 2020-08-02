@@ -54,6 +54,10 @@ spec:
           mountPath: /app/credentials
           readOnly: true
       initContainers:
+      - name: busybox:1.32
+        image: busybox
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-ec", "sleep 1000"]
       - name: gps-init
         image: siropops/burry-gps-confd:0.0.1-SNAPSHOT
         imagePullPolicy: IfNotPresent
