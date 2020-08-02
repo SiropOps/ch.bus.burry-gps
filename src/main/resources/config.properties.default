@@ -1,0 +1,5 @@
+# JDBC
+spring.datasource.url=jdbc:postgresql://[HOST]:[PORT]/[DATABASE]
+# Rabbit Mq
+spring.rabbitmq.host=<HOST>
+spring.rabbitmq.port=<PORT>

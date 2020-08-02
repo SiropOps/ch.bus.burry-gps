@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gps
+  namespace: burry
+spec:
+  ports:
+    - name: http-gps
+      protocol: TCP
+      port: 8011
+      targetPort: 8011
+  selector:
+    app: app-gps
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gps
+  namespace: burry
+spec:
+  selector:
+    matchLabels:
+      app: app-gps
+  template:
+    metadata:
+      labels:
+        app: app-gps
+    spec:
+      volumes:
+      - name: gps-properties
+        configMap:
+          name: gps-config-map
+      - name: gps-credentials
+        emptyDir: {}
+      containers:
+      - name: gps
+        image: siropops/burry-gps:0.0.1-SNAPSHOT
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8011
+          initialDelaySeconds: 120
+          timeoutSeconds: 3
+          failureThreshold: 3
+        ports:
+        - containerPort: 8011
+          protocol: TCP
+        volumeMounts:
+        - name: gps-properties
+          mountPath: /app/properties
+          readOnly: true
+        volumeMounts:
+        - name: gps-credentials
+          mountPath: /app/credentials
+          readOnly: true
+      initContainers:
+      - name: gps-init
+        image: siropops/burry-gps-confd:0.0.1-SNAPSHOT
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: gps-secret
+              key: spring.datasource.username
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: gps-secret
+              key: spring.datasource.password
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: gps-secret
+              key: spring.rabbitmq.username
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: gps-secret
+              key: spring.rabbitmq.password
+        volumeMounts:
+        - name: gps-credentials
+          mountPath: /app/credentials
