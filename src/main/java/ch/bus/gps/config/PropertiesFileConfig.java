@@ -1,8 +1,10 @@
 package ch.bus.gps.config;
 
+import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.PropertySource;
 import org.springframework.context.annotation.PropertySources;
 
+@Configuration
 @PropertySources({
     @PropertySource(value = "config.properties", ignoreResourceNotFound = true),
     @PropertySource(value = "file:/app/properties/config.properties",
