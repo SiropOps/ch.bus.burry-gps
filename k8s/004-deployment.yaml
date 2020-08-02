@@ -50,7 +50,6 @@ spec:
         - name: gps-properties
           mountPath: /app/properties
           readOnly: true
-        volumeMounts:
         - name: gps-credentials
           mountPath: /app/credentials
           readOnly: true
