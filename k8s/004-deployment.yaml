@@ -54,8 +54,8 @@ spec:
           mountPath: /app/credentials
           readOnly: true
       initContainers:
-      - name: busybox:1.32
-        image: busybox
+      - name: busybox
+        image: busybox:1.32
         imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "-ec", "sleep 1000"]
       - name: gps-init
