@@ -177,7 +177,6 @@ if __name__ == '__main__':
                     failOver()
             except Exception as e:
                 logger.error('RabbitMQ connection is fail at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
-                logger.error(str(e))
                 failOver()
             if is_connected:
                 failBack(channel)
