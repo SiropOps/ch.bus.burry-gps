@@ -190,8 +190,8 @@ if __name__ == '__main__':
         
             gpsp.running = False
             gpsp.join()  # wait for the thread to finish what it's doing
-            connection.close()
-            sys.exit(os.EX_SOFTWARE)
+            if is_connected:
+                connection.close()
         except Exception as e:
             logger.error('General error: ' + str(e))
             gpsp.running = False
