@@ -119,16 +119,13 @@ class GpsPoller(threading.Thread):
 def failOver():
     try:
         logger.info('failOver Started Script')
-        gpsp.start()  # start it up
         for _ in itertools.repeat(None, 300):  # repeat 5 minutes
             with open(FAIL_DIR + str(uuid.uuid1()) + '.pgps.json', 'w') as outfile:
                 json.dump(Data(gpsd).__dict__, outfile)
                 time.sleep(1)  # set to whatever
-        gpsp.running = False
-        logger.info("failOver is done.\nExiting. at " + strftime("%d-%m-%Y %H:%M:%S", gmtime()));
+        logger.info("failOver is done.");
     except Exception as e:
         logger.error('failOver error: ' + str(e))
-        gpsp.running = False
 
 def failBack(channel):
     try:
@@ -153,7 +150,7 @@ logger.info('Start Script at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
 os.system('dpkg-reconfigure gpsd')
 os.system('gpsd /dev/ttyUSB0 -F /var/run/gpsd.sock')
 
-time.sleep(300)
+time.sleep(10)
 
 logger.info('Sleep end at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
 
@@ -161,6 +158,8 @@ if __name__ == '__main__':
     while True:
         try:       
             gpsp = GpsPoller()  # create the thread
+            gpsp.start()  # start it up
+            is_connected = False
             try:
                 credentials = pika.PlainCredentials(os.environ['spring.rabbitmq.username'], os.environ['spring.rabbitmq.password'])
                 connection = pika.BlockingConnection(pika.ConnectionParameters(os.environ['spring.rabbitmq.host'], os.environ['spring.rabbitmq.port'], '/', credentials))
@@ -171,34 +170,32 @@ if __name__ == '__main__':
                             routing_key='gps',
                             properties=pika.BasicProperties(content_type='application/json'),
                             body='{"epd": NaN, "epx": 83.193, "epy": 116.417, "epv": 23.0, "altitude": 358.6, "eps": NaN, "longitude": 6.08235, "epc": NaN, "track": 353.79, "mode": 3, "time": "2019-09-14T22:06:19.000Z", "latitude": 46.237098333, "climb": NaN, "speed": 0.0, "ept": 0.005}') 
-        
+                    is_connected = True
                     logger.info('RabbitMQ is started at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
                 else:
                     logger.error('RabbitMQ is not connected at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
                     failOver()
-                    sys.exit(os.EX_SOFTWARE)
             except Exception as e:
                 logger.error('RabbitMQ connection is fail at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
                 logger.error(str(e))
                 failOver()
-                sys.exit(os.EX_SOFTWARE)
-        
-            gpsp.start()  # start it up
-            failBack(channel)
-            while True:
-                channel.basic_publish(exchange='',
-                            routing_key='gps',
-                            properties=pika.BasicProperties(content_type='application/json'),
-                            body=json.dumps(Data(gpsd).__dict__)) 
-                time.sleep(1)  # set to whatever
+            if is_connected:
+                failBack(channel)
+                while True:
+                    channel.basic_publish(exchange='',
+                                routing_key='gps',
+                                properties=pika.BasicProperties(content_type='application/json'),
+                                body=json.dumps(Data(gpsd).__dict__)) 
+                    time.sleep(1)  # set to whatever
         
             gpsp.running = False
             gpsp.join()  # wait for the thread to finish what it's doing
             connection.close()
-            logger.info("Done.\nExiting. at " + strftime("%d-%m-%Y %H:%M:%S", gmtime()));
             sys.exit(os.EX_SOFTWARE)
         except Exception as e:
             logger.error('General error: ' + str(e))
             gpsp.running = False
             gpsp.join()  # wait for the thread to finish what it's doing
             sys.exit(os.EX_SOFTWARE)
+    
+    sys.exit(os.EX_SOFTWARE)
