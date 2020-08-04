@@ -34,5 +34,8 @@ management:
   health:
     probes:
       enabled: true
-
-
+  endpoint:
+    health:
+      group:
+        custom:
+          include: ping
