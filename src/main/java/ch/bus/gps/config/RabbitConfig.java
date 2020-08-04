@@ -7,8 +7,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.handler.annotation.support.DefaultMessageHandlerMethodFactory;
 import org.springframework.messaging.handler.annotation.support.MessageHandlerMethodFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.json.JsonReadFeature;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 
 @Configuration
 public class RabbitConfig implements RabbitListenerConfigurer {
@@ -29,8 +29,9 @@ public class RabbitConfig implements RabbitListenerConfigurer {
   @Bean
   public MappingJackson2MessageConverter consumerJackson2MessageConverter() {
     MappingJackson2MessageConverter converter = new MappingJackson2MessageConverter();
-    ObjectMapper mapper = converter.getObjectMapper();
-    mapper.configure(JsonParser.Feature.ALLOW_NON_NUMERIC_NUMBERS, true);
+    converter.setObjectMapper(
+        JsonMapper.builder().enable(JsonReadFeature.ALLOW_NON_NUMERIC_NUMBERS).build());
     return converter;
   }
+
 }

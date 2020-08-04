@@ -12,7 +12,7 @@ logging:
 #              BasicBinder: TRACE
       springframework:
         web: INFO
-    root: WARN
+    root: INFO
 spring:
   application:
     name: burry-gps
@@ -30,5 +30,9 @@ spring:
 #        show_sql: true
         temp:
           use_jdbc_metadata_defaults: false
+management:
+  health:
+    probes:
+      enabled: true
 
 
