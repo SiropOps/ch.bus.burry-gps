@@ -36,12 +36,29 @@ spec:
       - name: gps
         image: siropops/burry-gps:0.0.1-SNAPSHOT
         imagePullPolicy: IfNotPresent
+        startupProbe:
+          httpGet:
+            path: /actuator/health/custom
+            port: 8011
+          initialDelaySeconds: 90
+          timeoutSeconds: 3
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8011
+          initialDelaySeconds: 10
+          timeoutSeconds: 3
+          periodSeconds: 30
+          failureThreshold: 3
         livenessProbe:
           httpGet:
-            path: /actuator/health
+            path: /actuator/health/liveness
             port: 8011
-          initialDelaySeconds: 240
+          initialDelaySeconds: 10
           timeoutSeconds: 3
+          periodSeconds: 30
           failureThreshold: 3
         ports:
         - containerPort: 8011
@@ -57,7 +74,7 @@ spec:
       - name: busybox
         image: busybox:1.32
         imagePullPolicy: IfNotPresent
-        command: ["/bin/sh", "-ec", "sleep 1000"]
+        command: ["/bin/sh", "-ec", "sleep 360"]
       - name: gps-init
         image: siropops/burry-gps-confd:0.0.1-SNAPSHOT
         imagePullPolicy: IfNotPresent
