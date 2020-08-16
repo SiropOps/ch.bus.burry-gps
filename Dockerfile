@@ -8,4 +8,4 @@ ADD ./target/app.jar /app/
 
 EXPOSE 8011
 
-CMD ["java", "-Xmx512m", "-jar", "/app/app.jar"]
+CMD ["java", "-Xmx1024m", "-jar", "/app/app.jar"]
