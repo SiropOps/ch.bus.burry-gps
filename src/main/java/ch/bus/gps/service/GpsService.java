@@ -42,7 +42,7 @@ public class GpsService {
         || isNull(gpsMessage.getLongitude()) || isNull(gpsMessage.getSpeed()))
       return;
 
-    log.info("Received message as specific class: {}", gpsMessage.toString());
+    log.debug("Received message as specific class: {}", gpsMessage.toString());
 
     Pgps pgps = new Pgps();
     BeanUtils.copyProperties(gpsMessage, pgps);
