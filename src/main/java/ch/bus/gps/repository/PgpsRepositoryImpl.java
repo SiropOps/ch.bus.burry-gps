@@ -49,13 +49,10 @@ public class PgpsRepositoryImpl implements PgpsRepositoryCustom {
 
   @Override
   public Pgps getLast() {
-    try {
-      return this.entityManager
-          .createQuery("from Pgps p order by p.time desc nulls last", Pgps.class).setMaxResults(1)
-          .getSingleResult();
-    } catch (NoResultException e) {
+    List<Pgps> l = this.getLast(1);
+    if (l == null || l.isEmpty())
       return null;
-    }
+    return l.get(0);
   }
 
   @Override

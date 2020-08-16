@@ -84,7 +84,7 @@ public class GpsService {
   // At every hour.
   public void getAllInCache() {
 
-    List<Pgps> r = this.pgpsRepository.findAll();
+    List<Pgps> r = this.pgpsRepository.getLast(250000);
 
     List<GpsDTO> list = new ArrayList<>();
     GpsDTO gpsDTO;
