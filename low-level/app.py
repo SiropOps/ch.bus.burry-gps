@@ -62,7 +62,7 @@ logger.addHandler(handler)
 console = logging.StreamHandler()
 console.setLevel(LOG_LEVEL)
 console.setFormatter(formatter)
-logger.addHandler(console) 
+logger.addHandler(console)
 
 # Replace stdout with logging to file at INFO level
 sys.stdout = MyLogger(logger, logging.INFO)
@@ -70,33 +70,33 @@ sys.stdout = MyLogger(logger, logging.INFO)
 sys.stderr = MyLogger(logger, logging.ERROR)
 
 
-class Data(object): 
+class Data(object):
 
-    def __init__(self, gpsp): 
-        
+    def __init__(self, gpsp):
+
         self.latitude = gpsd.fix.latitude  # Latitude in degrees
         self.epy = gpsd.fix.epy  # Estimated latitude error - meters
-        
+
         self.longitude = gpsd.fix.longitude  # Longitude in degrees
         self.epx = gpsd.fix.epx  # Estimated longitude error - meters
-        
+
         self.altitude = gpsd.fix.altitude  # Altitude - meters
         self.epv = gpsd.fix.epv  # Estimated altitude error - meters
-        
+
         self.speed = gpsd.fix.speed  # Speed over ground - meters per second
         self.eps = gpsd.fix.eps  # Estimated speed error - meters per second
-        
-        self.time = gpsd.utc  # Time 
-        self.ept = gpsd.fix.ept  # Estimated timestamp error - seconds 
-        
+
+        self.time = gpsd.utc  # Time
+        self.ept = gpsd.fix.ept  # Estimated timestamp error - seconds
+
         self.climb = gpsd.fix.climb  # Climb velocity - meters per second
         self.epc = gpsd.fix.epc  # Estimated climb error - meters per seconds
-        
+
         self.track = gpsd.fix.track  # Direction - degrees from true north
         self.epd = gpsd.fix.epd  # Estimated direction error - degrees
-        
+
         self.mode = gpsd.fix.mode
-    
+
     def __repr__(self):
         return str(self.__dict__)
 
@@ -137,7 +137,7 @@ def failBack(channel):
                     channel.basic_publish(exchange='',
                                           routing_key='gps',
                                           properties=pika.BasicProperties(content_type='application/json'),
-                                          body=json.dumps(data)) 
+                                          body=json.dumps(data))
                     os.remove(FAIL_DIR + file)
             except Exception as e:
                 logger.error('file ' + file + ' error: ' + str(e))
@@ -156,7 +156,7 @@ logger.info('Sleep end at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
 
 if __name__ == '__main__':
     while True:
-        try:       
+        try:
             gpsp = GpsPoller()  # create the thread
             gpsp.start()  # start it up
             is_connected = False
@@ -165,11 +165,11 @@ if __name__ == '__main__':
                 connection = pika.BlockingConnection(pika.ConnectionParameters(os.environ['spring.rabbitmq.host'], os.environ['spring.rabbitmq.port'], '/', credentials))
                 if connection.is_open:
                     channel = connection.channel()
-                    channel.queue_declare(queue='gps')
+                    channel.queue_declare(queue='gps', durable=True)
                     channel.basic_publish(exchange='',
                             routing_key='gps',
                             properties=pika.BasicProperties(content_type='application/json'),
-                            body='{"epd": NaN, "epx": 83.193, "epy": 116.417, "epv": 23.0, "altitude": 358.6, "eps": NaN, "longitude": 6.08235, "epc": NaN, "track": 353.79, "mode": 3, "time": "2019-09-14T22:06:19.000Z", "latitude": 46.237098333, "climb": NaN, "speed": 0.0, "ept": 0.005}') 
+                            body='{"epd": NaN, "epx": 83.193, "epy": 116.417, "epv": 23.0, "altitude": 358.6, "eps": NaN, "longitude": 6.08235, "epc": NaN, "track": 353.79, "mode": 3, "time": "2019-09-14T22:06:19.000Z", "latitude": 46.237098333, "climb": NaN, "speed": 0.0, "ept": 0.005}')
                     is_connected = True
                     logger.info('RabbitMQ is started at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
                 else:
@@ -184,9 +184,9 @@ if __name__ == '__main__':
                     channel.basic_publish(exchange='',
                                 routing_key='gps',
                                 properties=pika.BasicProperties(content_type='application/json'),
-                                body=json.dumps(Data(gpsd).__dict__)) 
+                                body=json.dumps(Data(gpsd).__dict__))
                     time.sleep(1)  # set to whatever
-        
+
             gpsp.running = False
             gpsp.join()  # wait for the thread to finish what it's doing
             if is_connected:
@@ -196,5 +196,5 @@ if __name__ == '__main__':
             gpsp.running = False
             gpsp.join()  # wait for the thread to finish what it's doing
             sys.exit(os.EX_SOFTWARE)
-    
+
     sys.exit(os.EX_SOFTWARE)
