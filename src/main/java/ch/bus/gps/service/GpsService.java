@@ -3,6 +3,7 @@ package ch.bus.gps.service;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -27,6 +28,7 @@ public class GpsService {
 
   private static List<GpsDTO> CACHED_TRIPE = new ArrayList<>();
   private static boolean RUNNING = true;
+  private static Pgps last = null;
 
   private boolean isNull(Double value) {
     return (value == null ? true : Double.isNaN(value));
@@ -44,6 +46,7 @@ public class GpsService {
 
     log.debug("Received message as specific class: {}", gpsMessage.toString());
 
+
     Pgps pgps = new Pgps();
     BeanUtils.copyProperties(gpsMessage, pgps);
     pgps.setAltitudeError(gpsMessage.getEpv());
@@ -54,7 +57,14 @@ public class GpsService {
     pgps.setTrackError(gpsMessage.getEpd());
     pgps.setCoordinate(
         this.pgpsRepository.createPoint(gpsMessage.getLongitude(), gpsMessage.getLatitude()));
-    this.pgpsRepository.save(pgps);
+
+    if (!Optional.ofNullable(last).isPresent()
+        || (last.getSpeed() > 0.0 && pgps.getSpeed() > 0.0)) {
+      this.pgpsRepository.save(pgps);
+    }
+
+    last = pgps;
+
   }
 
   public void stop() {
@@ -62,7 +72,9 @@ public class GpsService {
   }
 
   public GpsDTO getLast() {
-    Pgps pgps = this.pgpsRepository.getLast();
+    Pgps pgps = last;
+    if (!Optional.ofNullable(pgps).isPresent())
+      pgps = this.pgpsRepository.getLast();
     GpsDTO gpsDTO = new GpsDTO();
     if (pgps == null)
       return gpsDTO;
