@@ -124,7 +124,9 @@ public class GpsService {
 
   public SpeakingClockDTO getSpeakingClock() {
 
-    Pgps pgps = this.pgpsRepository.getLast();
+    Pgps pgps = last;
+    if (!Optional.ofNullable(pgps).isPresent())
+      pgps = this.pgpsRepository.getLast();
     Date date = new Date();
 
     if (pgps != null && pgps.getTime() != null)

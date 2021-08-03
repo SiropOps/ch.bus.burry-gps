@@ -1,4 +1,4 @@
-FROM openjdk:11-jre-slim
+FROM arm32v7/openjdk:11
 
 LABEL maintainer="SiropOps <Cyril.Boillat@gmail.com>"
 
