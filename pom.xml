@@ -11,7 +11,7 @@
 	</parent>
 	<groupId>ch.bus</groupId>
 	<artifactId>burry-gps</artifactId>
-	<version>0.0.2</version>
+	<version>0.0.3</version>
 	<name>burry-gps</name>
 	<description>BURRY-GPS : Manage GPS on Bus</description>
 
