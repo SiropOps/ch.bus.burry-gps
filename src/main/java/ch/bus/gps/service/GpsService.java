@@ -132,7 +132,11 @@ public class GpsService {
     if (pgps != null && pgps.getTime() != null)
       date = pgps.getTime();
 
-    return new SpeakingClockDTO(date);
+    // Tue Aug 10 08:45:25 CEST 2021
+    if (new Date(1628577925000l).before(date))
+      return new SpeakingClockDTO(date);
+    else
+      return new SpeakingClockDTO(new Date());
   }
 
 }
