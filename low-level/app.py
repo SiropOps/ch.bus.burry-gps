@@ -181,6 +181,7 @@ if __name__ == '__main__':
             if is_connected:
                 failBack(channel)
                 previousTime = None
+                previousStep = 0
                 while True:
                     data = Data(gpsd)
                     if previousTime == data.time:
@@ -189,7 +190,10 @@ if __name__ == '__main__':
                                 routing_key='gps',
                                 properties=pika.BasicProperties(content_type='application/json'),
                                 body=json.dumps(data.__dict__))
-                    previousTime = data.time
+                    if previousStep > 10:
+                        previousTime = data.time
+                        previousStep = 0
+                    previousStep += 1
                     time.sleep(1)  # set to whatever
 
             gpsp.running = False
