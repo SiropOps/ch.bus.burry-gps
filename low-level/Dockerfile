@@ -5,10 +5,10 @@ LABEL maintainer="SiropOps <Cyril_Boillat@hotmail.com>"
 RUN apt-get -y update -qq && \
 	apt-get -y install gpsd gpsd-clients python python-pip vim && \
 	apt-get clean && \
-	rm -rf /var/lib/apt/lists/* && \
-	rm -rf /tmp/* /var/tmp/* && \
 	dpkg-reconfigure gpsd && gpsd /dev/ttyUSB0 -F /var/run/gpsd.sock && \
-	python -m pip install pika --upgrade
+	python -m pip install pika --upgrade && \
+	rm -rf /var/lib/apt/lists/* && \
+    rm -rf /tmp/* /var/tmp/*
 	
 COPY ./app.py /app/
 
