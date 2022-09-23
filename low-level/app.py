@@ -185,15 +185,19 @@ if __name__ == '__main__':
                 while True:
                     data = Data(gpsd)
                     if previousTime == data.time:
-                        break
+                        previousStep += 1
+                        if previousStep > 10:
+                            break
+                    else:
+                        previousStep = 0
+                   
                     channel.basic_publish(exchange='',
                                 routing_key='gps',
                                 properties=pika.BasicProperties(content_type='application/json'),
                                 body=json.dumps(data.__dict__))
-                    if previousStep > 10:
-                        previousTime = data.time
-                        previousStep = 0
-                    previousStep += 1
+                   
+                    previousTime = data.time
+                                        
                     time.sleep(1)  # set to whatever
 
             gpsp.running = False
