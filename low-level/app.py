@@ -186,7 +186,7 @@ if __name__ == '__main__':
                     data = Data(gpsd)
                     if previousTime == data.time:
                         previousStep += 1
-                        if previousStep > 10:
+                        if previousStep > 60:
                             break
                     else:
                         previousStep = 0
