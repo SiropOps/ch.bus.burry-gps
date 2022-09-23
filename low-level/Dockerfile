@@ -8,8 +8,9 @@ RUN apt-get -y update -qq && \
 	dpkg-reconfigure gpsd && gpsd /dev/ttyUSB0 -F /var/run/gpsd.sock && \
 	rm -rf /var/lib/apt/lists/* && \
     rm -rf /tmp/* /var/tmp/*
-	#python -m pip install --upgrade pip && \
-RUN python -m pip install pika --upgrade
+
+RUN python -m pip install --upgrade pip && \
+    python -m pip install pika --upgrade
 	
 COPY ./app.py /app/
 
