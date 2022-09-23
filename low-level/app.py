@@ -181,10 +181,12 @@ if __name__ == '__main__':
             if is_connected:
                 failBack(channel)
                 while True:
+                    data = Data(gpsd).__dict__
+                    logger.info(data.time)
                     channel.basic_publish(exchange='',
                                 routing_key='gps',
                                 properties=pika.BasicProperties(content_type='application/json'),
-                                body=json.dumps(Data(gpsd).__dict__))
+                                body=json.dumps(data))
                     time.sleep(1)  # set to whatever
 
             gpsp.running = False
