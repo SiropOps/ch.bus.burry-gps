@@ -183,7 +183,7 @@ if __name__ == '__main__':
                 previousTime = None
                 while True:
                     data = Data(gpsd)
-                    if previousTime == data.time or True:
+                    if previousTime == data.time:
                         break
                     channel.basic_publish(exchange='',
                                 routing_key='gps',
@@ -196,6 +196,7 @@ if __name__ == '__main__':
             gpsp.join()  # wait for the thread to finish what it's doing
             if is_connected:
                 connection.close()
+            time.sleep(3)
         except Exception as e:
             logger.error('General error: ' + str(e))
             gpsp.running = False
