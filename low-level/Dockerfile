@@ -10,6 +10,7 @@ RUN apt-get -y update -qq && \
     rm -rf /tmp/* /var/tmp/*
 
 RUN python3 -m pip install --upgrade pip && \
+    python3 -m pip install gps --upgrade && \
     python3 -m pip install pika --upgrade
 	
 COPY ./app.py /app/
