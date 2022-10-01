@@ -28,7 +28,9 @@ public class GpsService {
 
   private static List<GpsDTO> CACHED_TRIPE = new ArrayList<>();
   private static boolean RUNNING = true;
-  private static Pgps last = null;
+  private static Pgps LAST = null;
+
+  private Date speakingClockDate = null;
 
   private boolean isNull(Double value) {
     return (value == null ? true : Double.isNaN(value));
@@ -40,7 +42,11 @@ public class GpsService {
     if (gpsMessage == null || !RUNNING)
       return;
 
-    if (gpsMessage.getTime() == null || isNull(gpsMessage.getLatitude())
+    if (Optional.ofNullable(gpsMessage.getTime()).isPresent()) {
+      speakingClockDate = gpsMessage.getTime();
+    }
+
+    if (!Optional.ofNullable(gpsMessage.getTime()).isPresent() || isNull(gpsMessage.getLatitude())
         || isNull(gpsMessage.getLongitude()) || isNull(gpsMessage.getSpeed()))
       return;
 
@@ -58,12 +64,12 @@ public class GpsService {
     pgps.setCoordinate(
         this.pgpsRepository.createPoint(gpsMessage.getLongitude(), gpsMessage.getLatitude()));
 
-    if (!Optional.ofNullable(last).isPresent()
-        || (last.getSpeed() > 0.0 && pgps.getSpeed() > 0.0)) {
+    if (!Optional.ofNullable(LAST).isPresent()
+        || (Optional.ofNullable(LAST.getSpeed()).orElse(0.0) > 0.0 && pgps.getSpeed() > 0.0)) {
       this.pgpsRepository.save(pgps);
     }
 
-    last = pgps;
+    LAST = pgps;
 
   }
 
@@ -72,7 +78,7 @@ public class GpsService {
   }
 
   public GpsDTO getLast() {
-    Pgps pgps = last;
+    Pgps pgps = LAST;
     if (!Optional.ofNullable(pgps).isPresent())
       pgps = this.pgpsRepository.getLast();
     GpsDTO gpsDTO = new GpsDTO();
@@ -124,17 +130,10 @@ public class GpsService {
 
   public SpeakingClockDTO getSpeakingClock() {
 
-    Pgps pgps = last;
-    if (!Optional.ofNullable(pgps).isPresent())
-      pgps = this.pgpsRepository.getLast();
-    Date date = new Date();
-
-    if (pgps != null && pgps.getTime() != null)
-      date = pgps.getTime();
-
-    // Tue Aug 10 08:45:25 CEST 2021
-    if (new Date(1628577925000l).before(date))
-      return new SpeakingClockDTO(date);
+    if (Optional.ofNullable(speakingClockDate).isPresent()
+        && new Date(1628577925000l).before(speakingClockDate))
+      // Tue Aug 10 08:45:25 CEST 2021
+      return new SpeakingClockDTO(speakingClockDate);
     else
       return new SpeakingClockDTO(new Date());
   }
