@@ -184,13 +184,13 @@ if __name__ == '__main__':
                 previousStep = 0
                 while True:
                     data = Data(gpsd)
-                    if previousTime == data.time:
-                        previousStep += 1
-                        if previousStep > 60:
-                            break
-                    else:
-                        previousStep = 0
-                        previousTime = data.time
+                    # if previousTime == data.time:
+                    #     previousStep += 1
+                    #     if previousStep > 60:
+                    #         break
+                    # else:
+                    #     previousStep = 0
+                    #     previousTime = data.time
                    
                     channel.basic_publish(exchange='',
                                 routing_key='gps',
