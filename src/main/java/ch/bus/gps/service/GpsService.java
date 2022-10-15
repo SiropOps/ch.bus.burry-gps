@@ -64,8 +64,7 @@ public class GpsService {
     pgps.setCoordinate(
         this.pgpsRepository.createPoint(gpsMessage.getLongitude(), gpsMessage.getLatitude()));
 
-    if (!Optional.ofNullable(LAST).isPresent()
-        || (Optional.ofNullable(LAST.getSpeed()).orElse(0.0) > 0.0 && pgps.getSpeed() > 0.0)) {
+    if (!Optional.ofNullable(LAST).isPresent() || pgps.getSpeed() > 0.0) {
       this.pgpsRepository.save(pgps);
     }
 
