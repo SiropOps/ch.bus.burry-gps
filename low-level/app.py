@@ -180,18 +180,8 @@ if __name__ == '__main__':
                 failOver()
             if is_connected:
                 failBack(channel)
-                previousTime = None
-                previousStep = 0
                 while True:
-                    data = Data(gpsd)
-                    # if previousTime == data.time:
-                    #     previousStep += 1
-                    #     if previousStep > 60:
-                    #         break
-                    # else:
-                    #     previousStep = 0
-                    #     previousTime = data.time
-                   
+                    data = Data(gpsd)                 
                     channel.basic_publish(exchange='',
                                 routing_key='gps',
                                 properties=pika.BasicProperties(content_type='application/json'),
