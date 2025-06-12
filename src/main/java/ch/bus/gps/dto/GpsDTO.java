@@ -3,7 +3,9 @@ package ch.bus.gps.dto;
 import java.io.Serializable;
 import java.util.Date;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class GpsDTO implements Serializable {
 
   private static final long serialVersionUID = 1L;
