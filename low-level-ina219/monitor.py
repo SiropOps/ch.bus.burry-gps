@@ -88,5 +88,4 @@ if __name__ == "__main__":
             time.sleep(300)  # 5 minutes
     except KeyboardInterrupt:
         GPIO.cleanup()
-
-~
+        
