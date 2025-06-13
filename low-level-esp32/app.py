@@ -138,6 +138,7 @@ def handle_notify(_, data):
         # logger.info("Données reçues :\n%s", json.dumps(json_data, indent=2))
     except Exception as e:
         logger.warning("Erreur décodage JSON : %s | Brut : %s", e, data)
+        sys.exit(os.EX_SOFTWARE)
 
 async def main():
     while True:
