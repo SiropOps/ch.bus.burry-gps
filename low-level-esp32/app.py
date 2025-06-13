@@ -19,6 +19,9 @@ import asyncio
 from bleak import BleakClient, BleakScanner
 import pika
 import datetime
+import re
+
+ISO_TIME_PATTERN = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$")
 
 BLE_DEVICE_NAME = "GPS-NanoESP32"
 CHAR_UUID = "00002a56-0000-1000-8000-00805f9b34fb"
@@ -53,7 +56,7 @@ logger = logging.getLogger(__name__)
 # Set the log level to LOG_LEVEL
 logger.setLevel(LOG_LEVEL)
 # Make a handler that writes to a file, making a new file at midnight and keeping 3 backups
-handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2000000, backupCount=3)
+handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2 * 1024 * 1024, backupCount=3)
 # Format each log message like this
 formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
 # Attach the formatter to the handler
@@ -84,14 +87,28 @@ async def find_device():
 def handle_notify(_, data):
     try:
         raw = json.loads(data.decode())
-        # Reformater le champ time s'il existe
+        
+        # Vérification du champ time
         if "time" in raw:
-            try:
-                # Ex: 2025-06-12T20:07:58Z ⇒ parser sans millisecondes
-                dt = datetime.datetime.strptime(raw["time"], "%Y-%m-%dT%H:%M:%SZ")
-                raw["time"] = dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-            except Exception as e:
-                logger.warning(f"Erreur formatage time : {e}")
+            time_str = raw["time"]
+            match = ISO_TIME_PATTERN.match(time_str)
+            current_year = datetime.datetime.utcnow().year
+
+            if match:
+                year, month, day = int(match[1]), int(match[2]), int(match[3])
+                if year == current_year and 1 <= month <= 12 and 1 <= day <= 31:
+                    try:
+                        dt = datetime.datetime.strptime(time_str, "%Y-%m-%dT%H:%M:%SZ")
+                        raw["time"] = dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                    except Exception as e:
+                        logger.warning(f"Erreur parsing time malgré regex OK : {e}")
+                        raw["time"] = None
+                else:
+                    logger.warning(f"Date hors de l’année courante ou invalide : {time_str}")
+                    raw["time"] = None
+            else:
+                logger.warning(f"Time malformé ignoré : {time_str}")
+                raw["time"] = None
 
         # Mapping vers noms attendus par Java
         json_data = {
@@ -123,13 +140,22 @@ def handle_notify(_, data):
         logger.warning("Erreur décodage JSON : %s | Brut : %s", e, data)
 
 async def main():
-    address = await find_device()
-    async with BleakClient(address) as client:
-        logger.info("Connexion établie")
-        await client.start_notify(CHAR_UUID, handle_notify)
-        logger.info("En attente de notifications...\n(CTRL+C pour quitter)")
-        while True:
-            await asyncio.sleep(1)
+    while True:
+        try:
+            address = await find_device()
+            async with BleakClient(address) as client:
+                logger.info("Connexion établie")
+                await client.start_notify(CHAR_UUID, handle_notify)
+                logger.info("En attente de notifications...\n(CTRL+C pour quitter)")
+                while client.is_connected:
+                    await asyncio.sleep(1)
+            
+                logger.warning("Connexion BLE perdue")
+        except Exception as e:
+            logger.error(f"Erreur dans la boucle BLE : {e}")
+        
+        logger.info("Tentative de reconnexion dans 60 secondes...")
+        await asyncio.sleep(60)
 
 logger.info('Start Script at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
 
