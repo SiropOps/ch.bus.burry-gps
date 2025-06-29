@@ -26,7 +26,7 @@ public class GpsComponent {
   public synchronized void addOrSave(Pgps pgps) {
 
     if (Optional.ofNullable(pgps).isEmpty()) {
-      log.info("Saving most precise: {}", LIST_PGPS.size());
+      log.debug("Saving most precise: {}", LIST_PGPS.size());
       this.findMostPrecisePgps().ifPresent(p -> {
         log.debug("Saving most precise Pgps: {}", p);
         this.pgpsRepository.save(p);

@@ -80,7 +80,7 @@ public class GpsService {
   @Scheduled(cron = "*/1 * * * * *")
   // each second.
   public synchronized void manageReceiveMessage() {
-    log.info("manageReceiveMessage");
+    log.debug("manageReceiveMessage");
 
     this.gpsComponent.addOrSave(null);
 
