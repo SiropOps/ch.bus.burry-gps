@@ -13,6 +13,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ch.bus.gps.component.GpsComponent;
 import ch.bus.gps.dto.GpsDTO;
 import ch.bus.gps.dto.SpeakingClockDTO;
 import ch.bus.gps.entity.Pgps;
@@ -25,6 +26,9 @@ public class GpsService {
 
   @Autowired
   private PgpsRepository pgpsRepository;
+
+  @Autowired
+  private GpsComponent gpsComponent;
 
   private static List<GpsDTO> CACHED_TRIPE = new ArrayList<>();
   private static boolean RUNNING = true;
@@ -65,10 +69,20 @@ public class GpsService {
         this.pgpsRepository.createPoint(gpsMessage.getLongitude(), gpsMessage.getLatitude()));
 
     if (!Optional.ofNullable(LAST).isPresent() || pgps.getSpeed() > 0.5) {
-      this.pgpsRepository.save(pgps);
+      this.gpsComponent.addOrSave(pgps);
     }
 
     LAST = pgps;
+
+  }
+
+  @Async
+  @Scheduled(cron = "*/1 * * * * *")
+  // each second.
+  public synchronized void manageReceiveMessage() {
+    log.info("manageReceiveMessage");
+
+    this.gpsComponent.addOrSave(null);
 
   }
 
@@ -78,8 +92,8 @@ public class GpsService {
 
   public GpsDTO getLast() {
     Pgps pgps = LAST;
-    if (!Optional.ofNullable(pgps).isPresent())
-      pgps = this.pgpsRepository.getLast();
+    // if (!Optional.ofNullable(pgps).isPresent())
+    pgps = this.pgpsRepository.getLast();
     GpsDTO gpsDTO = new GpsDTO();
     if (pgps == null)
       return gpsDTO;

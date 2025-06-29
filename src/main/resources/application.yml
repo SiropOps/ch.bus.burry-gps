@@ -3,6 +3,9 @@ server:
   
 logging:
   level:
+    ch:
+      bus:
+        gps: INFO
     org:
 #      hibernate:
 #        SQL: DEBUG
