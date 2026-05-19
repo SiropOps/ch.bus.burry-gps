@@ -48,20 +48,23 @@ public class GpsController {
   @Autowired
   private GpsService gpsService;
 
-  @Value("${gps.map.tile-url-template:https://tile.openstreetmap.org/{z}/{x}/{y}.png}")
-  private String tileUrlTemplate;
-
   @Value("${gps.map.tile-user-agent:RoadPanel/1.0 (https://altidoma.ch; contact: info@altidoma.ch)}")
   private String tileUserAgent;
 
   @Value("${gps.map.tile-referer:https://altidoma.ch/}")
   private String tileReferer;
 
-  @Value("${gps.map.tile-cache-dir:/tmp/osm-tile-cache}")
+  @Value("${gps.map.tile-cache-dir:/tmp/map-tile-cache}")
   private String tileCacheDir;
 
   @Value("${gps.map.tile-timeout-ms:10000}")
   private int tileTimeoutMs;
+
+  @Value("${gps.map.osm-url-template:https://tile.openstreetmap.org/{z}/{x}/{y}.png}")
+  private String osmUrlTemplate;
+
+  @Value("${gps.map.light-url-template:https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png}")
+  private String lightUrlTemplate;
 
   @GetMapping("/speaking_clock")
   public ResponseEntity<SpeakingClockDTO> getSpeakingClock() {
@@ -86,29 +89,37 @@ public class GpsController {
 
   @GetMapping(value = "/map.bmp")
   public void getMapBmp(HttpServletResponse response) throws IOException {
+    this.getMapLightBmp(response);
+  }
+
+  @GetMapping(value = "/map-osm.bmp")
+  public void getMapOsmBmp(HttpServletResponse response) throws IOException {
     List<GpsDTO> gpsPoints = this.gpsService.getAll();
-    gpsPoints.forEach(point -> {
-      Double lat = point.getLatitude();
-      Double lng = point.getLongitude();
+    byte[] image = this.createBmpFromGpsPoints(gpsPoints, TileProvider.OSM);
+    this.writeBmpResponse(response, image, "gps-map-osm.bmp");
+  }
 
-      point.setLatitude(lng);
-      point.setLongitude(lat);
-    });
+  @GetMapping(value = "/map-light.bmp")
+  public void getMapLightBmp(HttpServletResponse response) throws IOException {
+    List<GpsDTO> gpsPoints = this.gpsService.getAll();
+    byte[] image = this.createBmpFromGpsPoints(gpsPoints, TileProvider.CARTO_LIGHT);
+    this.writeBmpResponse(response, image, "gps-map-light.bmp");
+  }
 
-    byte[] image = this.createBmpFromGpsPoints(gpsPoints);
-
+  private void writeBmpResponse(HttpServletResponse response, byte[] image, String filename)
+      throws IOException {
     response.setContentType("image/bmp");
-    response.setHeader("Content-Disposition", "inline; filename=\"gps-map.bmp\"");
+    response.setHeader("Content-Disposition", "inline; filename=\"" + filename + "\"");
     response.setContentLength(image.length);
-
     response.getOutputStream().write(image);
     response.getOutputStream().flush();
   }
 
-  private byte[] createBmpFromGpsPoints(List<GpsDTO> gpsPoints) throws IOException {
-    BufferedImage bufferedImage =
-        new BufferedImage(INKPLATE_WIDTH, INKPLATE_HEIGHT, BufferedImage.TYPE_BYTE_BINARY);
-    Graphics2D graphics = bufferedImage.createGraphics();
+  private byte[] createBmpFromGpsPoints(List<GpsDTO> gpsPoints, TileProvider provider)
+      throws IOException {
+    BufferedImage rgbImage =
+        new BufferedImage(INKPLATE_WIDTH, INKPLATE_HEIGHT, BufferedImage.TYPE_INT_RGB);
+    Graphics2D graphics = rgbImage.createGraphics();
 
     graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
     graphics.setColor(Color.WHITE);
@@ -119,13 +130,15 @@ public class GpsController {
     if (!geoPoints.isEmpty()) {
       BBox bbox = this.computeExpandedBBox(geoPoints);
       int zoom = this.computeBestZoom(bbox, INKPLATE_WIDTH, INKPLATE_HEIGHT, IMAGE_MARGIN);
-      this.drawOsmTiles(graphics, bbox, zoom);
+      this.drawMapTiles(graphics, bbox, zoom, this.resolveProviderConfig(provider));
+      this.simplifyMapForEpaper(rgbImage);
       this.drawTrack(graphics, geoPoints, bbox, zoom);
     }
 
     graphics.dispose();
+    BufferedImage binaryImage = this.convertToBinaryImage(rgbImage);
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-    ImageIO.write(bufferedImage, "bmp", outputStream);
+    ImageIO.write(binaryImage, "bmp", outputStream);
     return outputStream.toByteArray();
   }
 
@@ -175,7 +188,7 @@ public class GpsController {
     return MIN_ZOOM;
   }
 
-  private void drawOsmTiles(Graphics2D graphics, BBox bbox, int zoom) {
+  private void drawMapTiles(Graphics2D graphics, BBox bbox, int zoom, TileProviderConfig provider) {
     double minTileX = lonToTileX(bbox.minLon, zoom);
     double maxTileX = lonToTileX(bbox.maxLon, zoom);
     double minTileY = latToTileY(bbox.maxLat, zoom);
@@ -200,7 +213,7 @@ public class GpsController {
 
     for (int tileX = tileXStart; tileX <= tileXEnd; tileX++) {
       for (int tileY = tileYStart; tileY <= tileYEnd; tileY++) {
-        BufferedImage tile = this.getTileOrNull(zoom, tileX, tileY);
+        BufferedImage tile = this.getTileOrNull(provider, zoom, tileX, tileY);
 
         double drawX = xOffset + ((tileX - minTileX) * TILE_SIZE * scale);
         double drawY = yOffset + ((tileY - minTileY) * TILE_SIZE * scale);
@@ -219,9 +232,8 @@ public class GpsController {
   }
 
   private void drawTrack(Graphics2D graphics, List<Point2D.Double> geoPoints, BBox bbox, int zoom) {
-
     graphics.setColor(Color.BLACK);
-    graphics.setStroke(new BasicStroke(3f));
+    graphics.setStroke(new BasicStroke(5f));
 
     double minTileX = lonToTileX(bbox.minLon, zoom);
     double maxTileX = lonToTileX(bbox.maxLon, zoom);
@@ -266,19 +278,18 @@ public class GpsController {
       int x = (int) Math.round(point.getX());
       int y = (int) Math.round(point.getY());
 
-      graphics.fillOval(x - 2, y - 2, 5, 5);
+      graphics.fillOval(x - 3, y - 3, 7, 7);
     }
   }
 
-  private BufferedImage getTileOrNull(int zoom, int x, int y) {
-
+  private BufferedImage getTileOrNull(TileProviderConfig provider, int zoom, int x, int y) {
     int maxTileIndex = (1 << zoom) - 1;
 
     if (x < 0 || y < 0 || x > maxTileIndex || y > maxTileIndex) {
       return null;
     }
 
-    Path tilePath = Path.of(this.tileCacheDir)
+    Path tilePath = Path.of(this.tileCacheDir).resolve(provider.cacheSubDirectory)
         .resolve(Path.of(Integer.toString(zoom), Integer.toString(x), y + ".png"));
 
     try {
@@ -290,7 +301,7 @@ public class GpsController {
       }
 
       Files.createDirectories(tilePath.getParent());
-      BufferedImage downloadedTile = this.downloadTile(zoom, x, y);
+      BufferedImage downloadedTile = this.downloadTile(provider, zoom, x, y);
 
       if (downloadedTile != null) {
         ImageIO.write(downloadedTile, "png", tilePath.toFile());
@@ -299,7 +310,8 @@ public class GpsController {
 
       return downloadedTile;
     } catch (IOException e) {
-      LOGGER.warn("Tile load failure for z={}, x={}, y={} (cache={})", zoom, x, y, tilePath, e);
+      LOGGER.warn("Tile load failure provider={}, z={}, x={}, y={} (cache={})", provider.name,
+          zoom, x, y, tilePath, e);
       return null;
     }
   }
@@ -322,8 +334,9 @@ public class GpsController {
     return cachedTile;
   }
 
-  private BufferedImage downloadTile(int zoom, int x, int y) throws IOException {
-    String tileUrl = this.tileUrlTemplate.replace("{z}", Integer.toString(zoom))
+  private BufferedImage downloadTile(TileProviderConfig provider, int zoom, int x, int y)
+      throws IOException {
+    String tileUrl = provider.urlTemplate.replace("{z}", Integer.toString(zoom))
         .replace("{x}", Integer.toString(x)).replace("{y}", Integer.toString(y));
 
     HttpURLConnection connection = (HttpURLConnection) new URL(tileUrl).openConnection();
@@ -337,8 +350,8 @@ public class GpsController {
     int status = connection.getResponseCode();
     String contentType = connection.getContentType();
 
-    LOGGER.info("Tile request url={}, status={}, contentType={}, cacheDir={}", tileUrl, status,
-        contentType, this.tileCacheDir);
+    LOGGER.info("Tile request provider={}, url={}, status={}, contentType={}, cacheDir={}",
+        provider.name, tileUrl, status, contentType, this.tileCacheDir);
 
     boolean imageContentType =
         contentType != null && (contentType.toLowerCase().contains("image/png")
@@ -386,6 +399,49 @@ public class GpsController {
     graphics.drawRect(x, y, size, size);
   }
 
+  private void simplifyMapForEpaper(BufferedImage image) {
+    for (int y = 0; y < image.getHeight(); y++) {
+      for (int x = 0; x < image.getWidth(); x++) {
+        int rgb = image.getRGB(x, y);
+        int red = (rgb >> 16) & 0xFF;
+        int green = (rgb >> 8) & 0xFF;
+        int blue = rgb & 0xFF;
+
+        int gray = (red + green + blue) / 3;
+        gray = Math.min(255, gray + 60);
+
+        int mappedGray;
+        if (gray > 210) {
+          mappedGray = 255;
+        } else if (gray > 160) {
+          mappedGray = 225;
+        } else {
+          mappedGray = 80;
+        }
+
+        int newRgb = (mappedGray << 16) | (mappedGray << 8) | mappedGray;
+        image.setRGB(x, y, newRgb);
+      }
+    }
+  }
+
+  private BufferedImage convertToBinaryImage(BufferedImage source) {
+    BufferedImage binaryImage =
+        new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_BYTE_BINARY);
+    Graphics2D graphics = binaryImage.createGraphics();
+    graphics.drawImage(source, 0, 0, null);
+    graphics.dispose();
+    return binaryImage;
+  }
+
+  private TileProviderConfig resolveProviderConfig(TileProvider provider) {
+    if (provider == TileProvider.CARTO_LIGHT) {
+      return new TileProviderConfig("carto-light", this.lightUrlTemplate, "carto-light");
+    }
+
+    return new TileProviderConfig("osm", this.osmUrlTemplate, "osm");
+  }
+
   private static double lonToTileX(double lon, int zoom) {
     return (lon + 180.0D) / 360.0D * (1 << zoom);
   }
@@ -413,6 +469,23 @@ public class GpsController {
       this.minLat = minLat;
       this.maxLon = maxLon;
       this.maxLat = maxLat;
+    }
+  }
+
+  private enum TileProvider {
+    OSM, CARTO_LIGHT
+  }
+
+  private static class TileProviderConfig {
+
+    private final String name;
+    private final String urlTemplate;
+    private final String cacheSubDirectory;
+
+    private TileProviderConfig(String name, String urlTemplate, String cacheSubDirectory) {
+      this.name = name;
+      this.urlTemplate = urlTemplate;
+      this.cacheSubDirectory = cacheSubDirectory;
     }
   }
 }
