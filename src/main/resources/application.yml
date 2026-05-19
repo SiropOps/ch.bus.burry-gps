@@ -44,3 +44,11 @@ management:
       group:
         custom:
           include: ping
+
+gps:
+  map:
+    tile-url-template: https://tile.openstreetmap.org/{z}/{x}/{y}.png
+    tile-user-agent: "RoadPanel/1.0 (https://altidoma.ch; contact: info@altidoma.ch)"
+    tile-referer: https://altidoma.ch/
+    tile-cache-dir: /tmp/osm-tile-cache
+    tile-timeout-ms: 10000
