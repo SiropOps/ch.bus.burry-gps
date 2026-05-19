@@ -9,10 +9,10 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import javax.imageio.ImageIO;
@@ -41,6 +41,8 @@ public class GpsController {
   private static final String OSM_TILE_URL_TEMPLATE = "https://tile.openstreetmap.org/%d/%d/%d.png";
   private static final Path OSM_TILE_CACHE_DIR =
       Path.of(System.getProperty("java.io.tmpdir"), "osm-tile-cache");
+  private static final String OSM_USER_AGENT =
+      "RoadPanel/1.0 (https://altidoma.ch; contact: info@altidoma.ch)";
 
   @Autowired
   private GpsService gpsService;
@@ -94,7 +96,7 @@ public class GpsController {
       BBox bbox = this.computeExpandedBBox(geoPoints);
       int zoom = this.computeBestZoom(bbox, INKPLATE_WIDTH, INKPLATE_HEIGHT, IMAGE_MARGIN);
       this.drawOsmTiles(graphics, bbox, zoom);
-      this.drawTrack(graphics, geoPoints, bbox);
+      this.drawTrack(graphics, geoPoints, bbox, zoom);
     }
 
     graphics.dispose();
@@ -162,8 +164,10 @@ public class GpsController {
     double scaleY = (INKPLATE_HEIGHT - (2.0D * IMAGE_MARGIN)) / mapPixelHeight;
     double scale = Math.min(scaleX, scaleY);
 
-    double xOffset = IMAGE_MARGIN + ((INKPLATE_WIDTH - (2.0D * IMAGE_MARGIN)) - (mapPixelWidth * scale)) / 2.0D;
-    double yOffset = IMAGE_MARGIN + ((INKPLATE_HEIGHT - (2.0D * IMAGE_MARGIN)) - (mapPixelHeight * scale)) / 2.0D;
+    double xOffset =
+        IMAGE_MARGIN + ((INKPLATE_WIDTH - (2.0D * IMAGE_MARGIN)) - (mapPixelWidth * scale)) / 2.0D;
+    double yOffset = IMAGE_MARGIN
+        + ((INKPLATE_HEIGHT - (2.0D * IMAGE_MARGIN)) - (mapPixelHeight * scale)) / 2.0D;
 
     int tileXStart = (int) Math.floor(minTileX);
     int tileXEnd = (int) Math.floor(maxTileX);
@@ -181,31 +185,52 @@ public class GpsController {
         double drawY = yOffset + ((tileY - minTileY) * TILE_SIZE * scale);
         int drawSize = (int) Math.ceil(TILE_SIZE * scale);
 
-        graphics.drawImage(tile, (int) Math.round(drawX), (int) Math.round(drawY), drawSize, drawSize,
-            null);
+        graphics.drawImage(tile, (int) Math.round(drawX), (int) Math.round(drawY), drawSize,
+            drawSize, null);
       }
     }
   }
 
-  private void drawTrack(Graphics2D graphics, List<Point2D.Double> geoPoints, BBox bbox) {
-    graphics.setColor(Color.BLACK);
-    graphics.setStroke(new BasicStroke(2f));
+  private void drawTrack(Graphics2D graphics, List<Point2D.Double> geoPoints, BBox bbox, int zoom) {
 
-    double drawWidth = INKPLATE_WIDTH - (2.0D * IMAGE_MARGIN);
-    double drawHeight = INKPLATE_HEIGHT - (2.0D * IMAGE_MARGIN);
-    double lonRange = Math.max(bbox.maxLon - bbox.minLon, 0.000001D);
-    double latRange = Math.max(bbox.maxLat - bbox.minLat, 0.000001D);
+    graphics.setColor(Color.BLACK);
+    graphics.setStroke(new BasicStroke(3f));
+
+    double minTileX = lonToTileX(bbox.minLon, zoom);
+    double maxTileX = lonToTileX(bbox.maxLon, zoom);
+    double minTileY = latToTileY(bbox.maxLat, zoom);
+    double maxTileY = latToTileY(bbox.minLat, zoom);
+
+    double mapPixelWidth = (maxTileX - minTileX) * TILE_SIZE;
+    double mapPixelHeight = (maxTileY - minTileY) * TILE_SIZE;
+
+    double scaleX = (INKPLATE_WIDTH - (2.0D * IMAGE_MARGIN)) / mapPixelWidth;
+    double scaleY = (INKPLATE_HEIGHT - (2.0D * IMAGE_MARGIN)) / mapPixelHeight;
+    double scale = Math.min(scaleX, scaleY);
+
+    double xOffset =
+        IMAGE_MARGIN + ((INKPLATE_WIDTH - (2.0D * IMAGE_MARGIN)) - (mapPixelWidth * scale)) / 2.0D;
+
+    double yOffset = IMAGE_MARGIN
+        + ((INKPLATE_HEIGHT - (2.0D * IMAGE_MARGIN)) - (mapPixelHeight * scale)) / 2.0D;
 
     List<Point2D.Double> scaledPoints = new ArrayList<>();
+
     for (Point2D.Double geoPoint : geoPoints) {
-      double x = IMAGE_MARGIN + ((geoPoint.getX() - bbox.minLon) / lonRange) * drawWidth;
-      double y = IMAGE_MARGIN + ((bbox.maxLat - geoPoint.getY()) / latRange) * drawHeight;
-      scaledPoints.add(new Point2D.Double(x, y));
+
+      double tileX = lonToTileX(geoPoint.getX(), zoom);
+      double tileY = latToTileY(geoPoint.getY(), zoom);
+
+      double pixelX = xOffset + ((tileX - minTileX) * TILE_SIZE * scale);
+      double pixelY = yOffset + ((tileY - minTileY) * TILE_SIZE * scale);
+
+      scaledPoints.add(new Point2D.Double(pixelX, pixelY));
     }
 
     for (int i = 1; i < scaledPoints.size(); i++) {
       Point2D.Double p1 = scaledPoints.get(i - 1);
       Point2D.Double p2 = scaledPoints.get(i);
+
       graphics.drawLine((int) Math.round(p1.getX()), (int) Math.round(p1.getY()),
           (int) Math.round(p2.getX()), (int) Math.round(p2.getY()));
     }
@@ -213,27 +238,58 @@ public class GpsController {
     for (Point2D.Double point : scaledPoints) {
       int x = (int) Math.round(point.getX());
       int y = (int) Math.round(point.getY());
-      graphics.fillRect(x - 1, y - 1, 3, 3);
+
+      graphics.fillOval(x - 2, y - 2, 5, 5);
     }
   }
 
   private BufferedImage getTile(int zoom, int x, int y) throws IOException {
+
     int maxTileIndex = (1 << zoom) - 1;
+
     if (x < 0 || y < 0 || x > maxTileIndex || y > maxTileIndex) {
       return null;
     }
 
-    Path tilePath = OSM_TILE_CACHE_DIR.resolve(Path.of(Integer.toString(zoom), Integer.toString(x), y + ".png"));
+    Path tilePath = OSM_TILE_CACHE_DIR
+        .resolve(Path.of(Integer.toString(zoom), Integer.toString(x), y + ".png"));
 
     if (!Files.exists(tilePath)) {
+
       Files.createDirectories(tilePath.getParent());
-      URL url = new URL(String.format(OSM_TILE_URL_TEMPLATE, zoom, x, y));
-      try (InputStream inputStream = url.openStream()) {
-        Files.copy(inputStream, tilePath, StandardCopyOption.REPLACE_EXISTING);
+
+      BufferedImage tile = this.downloadTile(zoom, x, y);
+
+      if (tile != null) {
+        ImageIO.write(tile, "png", tilePath.toFile());
       }
     }
 
     return ImageIO.read(tilePath.toFile());
+  }
+
+  private BufferedImage downloadTile(int zoom, int x, int y) throws IOException {
+
+    URL url = new URL(String.format(OSM_TILE_URL_TEMPLATE, zoom, x, y));
+
+    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+    connection.setRequestProperty("User-Agent", OSM_USER_AGENT);
+
+    connection.setRequestProperty("Accept", "image/png");
+
+    connection.setConnectTimeout(5000);
+    connection.setReadTimeout(10000);
+
+    int status = connection.getResponseCode();
+
+    if (status != 200) {
+      throw new IOException("OSM tile download failed: HTTP " + status + " for " + url);
+    }
+
+    try (InputStream inputStream = connection.getInputStream()) {
+      return ImageIO.read(inputStream);
+    }
   }
 
   private static double lonToTileX(double lon, int zoom) {
@@ -241,19 +297,24 @@ public class GpsController {
   }
 
   private static double latToTileY(double lat, int zoom) {
+
     double clampedLat = Math.max(-85.05112878D, Math.min(85.05112878D, lat));
+
     double latRad = Math.toRadians(clampedLat);
+
     return (1.0D - Math.log(Math.tan(latRad) + (1.0D / Math.cos(latRad))) / Math.PI) / 2.0D
         * (1 << zoom);
   }
 
   private static class BBox {
+
     private final double minLon;
     private final double minLat;
     private final double maxLon;
     private final double maxLat;
 
     private BBox(double minLon, double minLat, double maxLon, double maxLat) {
+
       this.minLon = minLon;
       this.minLat = minLat;
       this.maxLon = maxLon;
