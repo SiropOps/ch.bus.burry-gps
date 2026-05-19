@@ -120,6 +120,8 @@ public class GpsService {
   // At every hour.
   public void getAllInCache() {
 
+    this.gpsPointFilteredByMinuteRepository.refreshMaterializedView();
+
     List<GpsPointFilteredByMinute> r =
         this.gpsPointFilteredByMinuteRepository.findAllByOrderByMinuteAsc();
 

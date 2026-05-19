@@ -2,6 +2,7 @@ package ch.bus.gps.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -57,6 +59,9 @@ class GpsServiceTest {
         .thenReturn(Arrays.asList(row));
 
     gpsService.getAllInCache();
+    InOrder inOrder = inOrder(gpsPointFilteredByMinuteRepository);
+    inOrder.verify(gpsPointFilteredByMinuteRepository, times(1)).refreshMaterializedView();
+    inOrder.verify(gpsPointFilteredByMinuteRepository, times(1)).findAllByOrderByMinuteAsc();
 
     List<GpsDTO> all = gpsService.getAll();
     assertEquals(1, all.size());
@@ -70,12 +75,14 @@ class GpsServiceTest {
 
   @Test
   void getAllShouldReuseCacheWithoutReloadingRepository() {
-    when(gpsPointFilteredByMinuteRepository.findAllByOrderByMinuteAsc()).thenReturn(Arrays.asList());
+    when(gpsPointFilteredByMinuteRepository.findAllByOrderByMinuteAsc())
+        .thenReturn(Arrays.asList());
 
     gpsService.getAllInCache();
     gpsService.getAll();
     gpsService.getAll();
 
+    verify(gpsPointFilteredByMinuteRepository, times(1)).refreshMaterializedView();
     verify(gpsPointFilteredByMinuteRepository, times(1)).findAllByOrderByMinuteAsc();
     assertTrue(gpsService.getAll().isEmpty());
   }
