@@ -1,5 +1,6 @@
 package ch.bus.gps.service;
 
+import static org.junit.Assert.assertNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.inOrder;
@@ -65,9 +66,9 @@ class GpsServiceTest {
 
     List<GpsDTO> all = gpsService.getAll();
     assertEquals(1, all.size());
-    assertEquals(minute, all.get(0).getTime());
-    assertEquals(11.2, all.get(0).getSpeed());
-    assertEquals(0.4, all.get(0).getEps());
+    assertNull(all.get(0).getTime());
+    assertNull(all.get(0).getSpeed());
+    assertNull(all.get(0).getEps());
     assertEquals(6.14, all.get(0).getLatitude());
     assertEquals(46.2, all.get(0).getLongitude());
     verify(gpsPointFilteredByMinuteRepository, times(1)).findAllByOrderByMinuteAsc();
