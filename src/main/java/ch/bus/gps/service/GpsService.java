@@ -128,9 +128,6 @@ public class GpsService {
 
     for (GpsPointFilteredByMinute point : r) {
       gpsDTO = new GpsDTO();
-      gpsDTO.setTime(point.getMinute());
-      gpsDTO.setSpeed(point.getAvgSpeed());
-      gpsDTO.setEps(point.getAvgSpeedError());
       gpsDTO.setLatitude(point.getCoordinateAvgGeom().getX());
       gpsDTO.setLongitude(point.getCoordinateAvgGeom().getY());
       list.add(gpsDTO);
