@@ -11,10 +11,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import javax.imageio.ImageIO;
+import javax.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -56,14 +55,17 @@ public class GpsController {
     return new ResponseEntity<>(this.gpsService.getAll(), HttpStatus.OK);
   }
 
-  @GetMapping(value = "/map.bmp", produces = "image/bmp")
-  public ResponseEntity<byte[]> getMapBmp() throws IOException {
+  @GetMapping(value = "/map.bmp")
+  public void getMapBmp(HttpServletResponse response) throws IOException {
     List<GpsDTO> gpsPoints = this.gpsService.getAll();
     byte[] image = this.createBmpFromGpsPoints(gpsPoints);
 
-    HttpHeaders headers = new HttpHeaders();
-    headers.setContentType(MediaType.parseMediaType("image/bmp"));
-    return new ResponseEntity<>(image, headers, HttpStatus.OK);
+    response.setContentType("image/bmp");
+    response.setHeader("Content-Disposition", "inline; filename=\"gps-map.bmp\"");
+    response.setContentLength(image.length);
+
+    response.getOutputStream().write(image);
+    response.getOutputStream().flush();
   }
 
   private byte[] createBmpFromGpsPoints(List<GpsDTO> gpsPoints) throws IOException {

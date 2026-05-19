@@ -6,9 +6,11 @@ import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.Id;
 import javax.persistence.Table;
+import org.hibernate.annotations.Immutable;
 import org.locationtech.jts.geom.Point;
 
 @Entity
+@Immutable
 @Table(name = "vm_gps_points_filtered_by_minute", schema = "public")
 public class GpsPointFilteredByMinute implements Serializable {
 

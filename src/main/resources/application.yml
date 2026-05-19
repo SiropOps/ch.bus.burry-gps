@@ -29,6 +29,8 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.spatial.dialect.postgis.PostgisDialect
+        hbm2dll:
+          extra_physical_table_types: MATERIALIZED VIEW
         format_sql: true
 #        show_sql: true
         temp:
