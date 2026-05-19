@@ -16,7 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 import ch.bus.gps.component.GpsComponent;
 import ch.bus.gps.dto.GpsDTO;
 import ch.bus.gps.dto.SpeakingClockDTO;
+import ch.bus.gps.entity.GpsPointFilteredByMinute;
 import ch.bus.gps.entity.Pgps;
+import ch.bus.gps.repository.GpsPointFilteredByMinuteRepository;
 import ch.bus.gps.repository.PgpsRepository;
 
 @Service
@@ -29,6 +31,9 @@ public class GpsService {
 
   @Autowired
   private GpsComponent gpsComponent;
+
+  @Autowired
+  private GpsPointFilteredByMinuteRepository gpsPointFilteredByMinuteRepository;
 
   private static List<GpsDTO> CACHED_TRIPE = new ArrayList<>();
   private static boolean RUNNING = true;
@@ -115,22 +120,19 @@ public class GpsService {
   // At every hour.
   public void getAllInCache() {
 
-    List<Pgps> r = this.pgpsRepository.getLast(250000);
+    List<GpsPointFilteredByMinute> r =
+        this.gpsPointFilteredByMinuteRepository.findAllByOrderByMinuteAsc();
 
     List<GpsDTO> list = new ArrayList<>();
     GpsDTO gpsDTO;
 
-    int modulo = 1;
-    if (r.size() > 5000)
-      modulo = r.size() / 5000;
-
-
-    for (int i = 0; i < r.size(); i++) {
-      if (i % modulo != 0)
-        continue;
+    for (GpsPointFilteredByMinute point : r) {
       gpsDTO = new GpsDTO();
-      gpsDTO.setLatitude(r.get(i).getCoordinate().getX());
-      gpsDTO.setLongitude(r.get(i).getCoordinate().getY());
+      gpsDTO.setTime(point.getMinute());
+      gpsDTO.setSpeed(point.getAvgSpeed());
+      gpsDTO.setEps(point.getAvgSpeedError());
+      gpsDTO.setLatitude(point.getCoordinateAvgGeom().getX());
+      gpsDTO.setLongitude(point.getCoordinateAvgGeom().getY());
       list.add(gpsDTO);
     }
 
