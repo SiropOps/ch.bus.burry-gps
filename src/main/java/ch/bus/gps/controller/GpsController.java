@@ -42,6 +42,11 @@ public class GpsController {
   private static final int TILE_SIZE = 256;
   private static final int MIN_ZOOM = 0;
   private static final int MAX_ZOOM = 19;
+  private static final int MAP_WHITE_THRESHOLD = 245;
+  private static final int MAP_LIGHT_GRAY_THRESHOLD = 220;
+  private static final int MAP_MEDIUM_GRAY_THRESHOLD = 190;
+  private static final int MAP_LABEL_THRESHOLD = 160;
+  private static final int MAP_DARK_THRESHOLD = 120;
   private static final Logger LOGGER = LoggerFactory.getLogger(GpsController.class);
   private static final long MIN_VALID_TILE_FILE_SIZE_BYTES = 200L;
 
@@ -150,41 +155,25 @@ public class GpsController {
   }
 
   private void simplifyMapForEpaper(BufferedImage image) {
-
     for (int y = 0; y < image.getHeight(); y++) {
-
       for (int x = 0; x < image.getWidth(); x++) {
-
         Color c = new Color(image.getRGB(x, y));
 
         int gray = (int) ((c.getRed() * 0.299) + (c.getGreen() * 0.587) + (c.getBlue() * 0.114));
 
-        // Éclaircit fortement le fond
-        gray += 70;
-
-        // Clamp
-        gray = Math.max(0, Math.min(255, gray));
-
         int out;
-
-        // Routes principales / textes
-        if (gray < 110) {
-          out = 0;
-        }
-
-        // Routes secondaires
-        else if (gray < 170) {
-          out = 120;
-        }
-
-        // Fond très clair
-        else if (gray < 220) {
-          out = 235;
-        }
-
-        // Blanc
-        else {
+        if (gray > MAP_WHITE_THRESHOLD) {
           out = 255;
+        } else if (gray > MAP_LIGHT_GRAY_THRESHOLD) {
+          out = 245;
+        } else if (gray > MAP_MEDIUM_GRAY_THRESHOLD) {
+          out = 220;
+        } else if (gray > MAP_LABEL_THRESHOLD) {
+          out = 170;
+        } else if (gray > MAP_DARK_THRESHOLD) {
+          out = 90;
+        } else {
+          out = 0;
         }
 
         image.setRGB(x, y, new Color(out, out, out).getRGB());
