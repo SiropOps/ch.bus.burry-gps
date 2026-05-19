@@ -87,13 +87,13 @@ public class GpsController {
   @GetMapping(value = "/map.bmp")
   public void getMapBmp(HttpServletResponse response) throws IOException {
     List<GpsDTO> gpsPoints = this.gpsService.getAll();
-    gpsPoints.forEach(point -> {
-      Double lat = point.getLatitude();
-      Double lng = point.getLongitude();
-
-      point.setLatitude(lng);
-      point.setLongitude(lat);
-    });
+    // gpsPoints.forEach(point -> {
+    // Double lat = point.getLatitude();
+    // Double lng = point.getLongitude();
+    //
+    // point.setLatitude(lng);
+    // point.setLongitude(lat);
+    // });
 
     byte[] image = this.createBmpFromGpsPoints(gpsPoints);
 
@@ -107,7 +107,8 @@ public class GpsController {
 
   private byte[] createBmpFromGpsPoints(List<GpsDTO> gpsPoints) throws IOException {
     BufferedImage bufferedImage =
-        new BufferedImage(INKPLATE_WIDTH, INKPLATE_HEIGHT, BufferedImage.TYPE_BYTE_BINARY);
+        new BufferedImage(INKPLATE_WIDTH, INKPLATE_HEIGHT, BufferedImage.TYPE_INT_RGB);
+
     Graphics2D graphics = bufferedImage.createGraphics();
 
     graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
@@ -119,23 +120,98 @@ public class GpsController {
     if (!geoPoints.isEmpty()) {
       BBox bbox = this.computeExpandedBBox(geoPoints);
       int zoom = this.computeBestZoom(bbox, INKPLATE_WIDTH, INKPLATE_HEIGHT, IMAGE_MARGIN);
+
       this.drawOsmTiles(graphics, bbox, zoom);
+
+      // Nettoyage / simplification du fond pour écran e-paper
+      this.simplifyMapForEpaper(bufferedImage);
+
+      // Trace GPS par-dessus, bien noire
       this.drawTrack(graphics, geoPoints, bbox, zoom);
     }
 
     graphics.dispose();
+
+    BufferedImage binaryImage =
+        new BufferedImage(INKPLATE_WIDTH, INKPLATE_HEIGHT, BufferedImage.TYPE_INT_RGB);
+
+    Graphics2D binaryGraphics = binaryImage.createGraphics();
+    binaryGraphics.drawImage(bufferedImage, 0, 0, null);
+    binaryGraphics.dispose();
+
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-    ImageIO.write(bufferedImage, "bmp", outputStream);
+
+    boolean ok = ImageIO.write(binaryImage, "bmp", outputStream);
+    if (!ok) {
+      throw new IOException("No ImageIO writer found for BMP format");
+    }
+
     return outputStream.toByteArray();
+  }
+
+  private void simplifyMapForEpaper(BufferedImage image) {
+
+    for (int y = 0; y < image.getHeight(); y++) {
+
+      for (int x = 0; x < image.getWidth(); x++) {
+
+        Color c = new Color(image.getRGB(x, y));
+
+        int gray = (int) ((c.getRed() * 0.299) + (c.getGreen() * 0.587) + (c.getBlue() * 0.114));
+
+        // Éclaircit fortement le fond
+        gray += 70;
+
+        // Clamp
+        gray = Math.max(0, Math.min(255, gray));
+
+        int out;
+
+        // Routes principales / textes
+        if (gray < 110) {
+          out = 0;
+        }
+
+        // Routes secondaires
+        else if (gray < 170) {
+          out = 120;
+        }
+
+        // Fond très clair
+        else if (gray < 220) {
+          out = 235;
+        }
+
+        // Blanc
+        else {
+          out = 255;
+        }
+
+        image.setRGB(x, y, new Color(out, out, out).getRGB());
+      }
+    }
   }
 
   private List<Point2D.Double> extractGeoPoints(List<GpsDTO> gpsPoints) {
     List<Point2D.Double> geoPoints = new ArrayList<>();
+
     for (GpsDTO point : gpsPoints) {
-      if (point.getLatitude() != null && point.getLongitude() != null) {
-        geoPoints.add(new Point2D.Double(point.getLongitude(), point.getLatitude()));
+      if (point.getLatitude() == null || point.getLongitude() == null) {
+        continue;
       }
+
+      double lat = point.getLongitude();
+      double lon = point.getLatitude();
+
+      // Sécurité : latitude doit être entre -90 et 90, longitude entre -180 et 180
+      if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        LOGGER.warn("Invalid GPS point ignored: lat={}, lon={}", lat, lon);
+        continue;
+      }
+
+      geoPoints.add(new Point2D.Double(lon, lat));
     }
+
     return geoPoints;
   }
 
@@ -221,7 +297,7 @@ public class GpsController {
   private void drawTrack(Graphics2D graphics, List<Point2D.Double> geoPoints, BBox bbox, int zoom) {
 
     graphics.setColor(Color.BLACK);
-    graphics.setStroke(new BasicStroke(3f));
+    graphics.setStroke(new BasicStroke(7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 
     double minTileX = lonToTileX(bbox.minLon, zoom);
     double maxTileX = lonToTileX(bbox.maxLon, zoom);
@@ -266,7 +342,7 @@ public class GpsController {
       int x = (int) Math.round(point.getX());
       int y = (int) Math.round(point.getY());
 
-      graphics.fillOval(x - 2, y - 2, 5, 5);
+      graphics.fillOval(x - 3, y - 3, 7, 7);
     }
   }
 
