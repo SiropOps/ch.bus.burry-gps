@@ -1,7 +1,9 @@
 package ch.bus.gps.service;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
+import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -128,11 +130,15 @@ public class GpsService {
     List<GpsDTO> list = new ArrayList<>();
     GpsDTO gpsDTO;
 
+    Date limitDate = new GregorianCalendar(2020, Calendar.JANUARY, 1).getTime();
     for (GpsPointFilteredByMinute point : r) {
-      gpsDTO = new GpsDTO();
-      gpsDTO.setLatitude(point.getCoordinateAvgGeom().getX());
-      gpsDTO.setLongitude(point.getCoordinateAvgGeom().getY());
-      list.add(gpsDTO);
+      if (Optional.ofNullable(point.getMinute()).orElse(new Date(1577836000000L))
+          .after(limitDate)) {
+        gpsDTO = new GpsDTO();
+        gpsDTO.setLatitude(point.getCoordinateAvgGeom().getX());
+        gpsDTO.setLongitude(point.getCoordinateAvgGeom().getY());
+        list.add(gpsDTO);
+      }
     }
 
     CACHED_TRIPE = list;

@@ -9,9 +9,9 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -87,6 +87,14 @@ public class GpsController {
   @GetMapping(value = "/map.bmp")
   public void getMapBmp(HttpServletResponse response) throws IOException {
     List<GpsDTO> gpsPoints = this.gpsService.getAll();
+    gpsPoints.forEach(point -> {
+      Double lat = point.getLatitude();
+      Double lng = point.getLongitude();
+
+      point.setLatitude(lng);
+      point.setLongitude(lat);
+    });
+
     byte[] image = this.createBmpFromGpsPoints(gpsPoints);
 
     response.setContentType("image/bmp");
@@ -199,8 +207,8 @@ public class GpsController {
         int drawSize = (int) Math.ceil(TILE_SIZE * scale);
 
         if (tile == null) {
-          this.drawMissingTilePlaceholder(graphics, (int) Math.round(drawX), (int) Math.round(drawY),
-              drawSize);
+          this.drawMissingTilePlaceholder(graphics, (int) Math.round(drawX),
+              (int) Math.round(drawY), drawSize);
           continue;
         }
 
@@ -332,8 +340,8 @@ public class GpsController {
     LOGGER.info("Tile request url={}, status={}, contentType={}, cacheDir={}", tileUrl, status,
         contentType, this.tileCacheDir);
 
-    boolean imageContentType = contentType != null
-        && (contentType.toLowerCase().contains("image/png")
+    boolean imageContentType =
+        contentType != null && (contentType.toLowerCase().contains("image/png")
             || contentType.toLowerCase().contains("image/jpeg")
             || contentType.toLowerCase().contains("image/jpg"));
 
