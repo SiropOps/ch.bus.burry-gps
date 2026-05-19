@@ -9,6 +9,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
@@ -17,7 +18,10 @@ import java.util.ArrayList;
 import java.util.List;
 import javax.imageio.ImageIO;
 import javax.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -38,14 +42,26 @@ public class GpsController {
   private static final int TILE_SIZE = 256;
   private static final int MIN_ZOOM = 0;
   private static final int MAX_ZOOM = 19;
-  private static final String OSM_TILE_URL_TEMPLATE = "https://tile.openstreetmap.org/%d/%d/%d.png";
-  private static final Path OSM_TILE_CACHE_DIR =
-      Path.of(System.getProperty("java.io.tmpdir"), "osm-tile-cache");
-  private static final String OSM_USER_AGENT =
-      "RoadPanel/1.0 (https://altidoma.ch; contact: info@altidoma.ch)";
+  private static final Logger LOGGER = LoggerFactory.getLogger(GpsController.class);
+  private static final long MIN_VALID_TILE_FILE_SIZE_BYTES = 200L;
 
   @Autowired
   private GpsService gpsService;
+
+  @Value("${gps.map.tile-url-template:https://tile.openstreetmap.org/{z}/{x}/{y}.png}")
+  private String tileUrlTemplate;
+
+  @Value("${gps.map.tile-user-agent:RoadPanel/1.0 (https://altidoma.ch; contact: info@altidoma.ch)}")
+  private String tileUserAgent;
+
+  @Value("${gps.map.tile-referer:https://altidoma.ch/}")
+  private String tileReferer;
+
+  @Value("${gps.map.tile-cache-dir:/tmp/osm-tile-cache}")
+  private String tileCacheDir;
+
+  @Value("${gps.map.tile-timeout-ms:10000}")
+  private int tileTimeoutMs;
 
   @GetMapping("/speaking_clock")
   public ResponseEntity<SpeakingClockDTO> getSpeakingClock() {
@@ -151,7 +167,7 @@ public class GpsController {
     return MIN_ZOOM;
   }
 
-  private void drawOsmTiles(Graphics2D graphics, BBox bbox, int zoom) throws IOException {
+  private void drawOsmTiles(Graphics2D graphics, BBox bbox, int zoom) {
     double minTileX = lonToTileX(bbox.minLon, zoom);
     double maxTileX = lonToTileX(bbox.maxLon, zoom);
     double minTileY = latToTileY(bbox.maxLat, zoom);
@@ -176,14 +192,17 @@ public class GpsController {
 
     for (int tileX = tileXStart; tileX <= tileXEnd; tileX++) {
       for (int tileY = tileYStart; tileY <= tileYEnd; tileY++) {
-        BufferedImage tile = this.getTile(zoom, tileX, tileY);
-        if (tile == null) {
-          continue;
-        }
+        BufferedImage tile = this.getTileOrNull(zoom, tileX, tileY);
 
         double drawX = xOffset + ((tileX - minTileX) * TILE_SIZE * scale);
         double drawY = yOffset + ((tileY - minTileY) * TILE_SIZE * scale);
         int drawSize = (int) Math.ceil(TILE_SIZE * scale);
+
+        if (tile == null) {
+          this.drawMissingTilePlaceholder(graphics, (int) Math.round(drawX), (int) Math.round(drawY),
+              drawSize);
+          continue;
+        }
 
         graphics.drawImage(tile, (int) Math.round(drawX), (int) Math.round(drawY), drawSize,
             drawSize, null);
@@ -243,7 +262,7 @@ public class GpsController {
     }
   }
 
-  private BufferedImage getTile(int zoom, int x, int y) throws IOException {
+  private BufferedImage getTileOrNull(int zoom, int x, int y) {
 
     int maxTileIndex = (1 << zoom) - 1;
 
@@ -251,45 +270,112 @@ public class GpsController {
       return null;
     }
 
-    Path tilePath = OSM_TILE_CACHE_DIR
+    Path tilePath = Path.of(this.tileCacheDir)
         .resolve(Path.of(Integer.toString(zoom), Integer.toString(x), y + ".png"));
 
-    if (!Files.exists(tilePath)) {
+    try {
+      if (Files.exists(tilePath)) {
+        BufferedImage cachedTile = this.readValidCachedTile(tilePath);
+        if (cachedTile != null) {
+          return cachedTile;
+        }
+      }
 
       Files.createDirectories(tilePath.getParent());
+      BufferedImage downloadedTile = this.downloadTile(zoom, x, y);
 
-      BufferedImage tile = this.downloadTile(zoom, x, y);
-
-      if (tile != null) {
-        ImageIO.write(tile, "png", tilePath.toFile());
+      if (downloadedTile != null) {
+        ImageIO.write(downloadedTile, "png", tilePath.toFile());
+        LOGGER.info("Cached tile {}", tilePath);
       }
+
+      return downloadedTile;
+    } catch (IOException e) {
+      LOGGER.warn("Tile load failure for z={}, x={}, y={} (cache={})", zoom, x, y, tilePath, e);
+      return null;
+    }
+  }
+
+  private BufferedImage readValidCachedTile(Path tilePath) throws IOException {
+    long fileSize = Files.size(tilePath);
+    if (fileSize < MIN_VALID_TILE_FILE_SIZE_BYTES) {
+      LOGGER.warn("Deleting too-small cached tile: {} ({} bytes)", tilePath, fileSize);
+      Files.deleteIfExists(tilePath);
+      return null;
     }
 
-    return ImageIO.read(tilePath.toFile());
+    BufferedImage cachedTile = ImageIO.read(tilePath.toFile());
+    if (cachedTile == null) {
+      LOGGER.warn("Deleting invalid cached tile: {}", tilePath);
+      Files.deleteIfExists(tilePath);
+      return null;
+    }
+
+    return cachedTile;
   }
 
   private BufferedImage downloadTile(int zoom, int x, int y) throws IOException {
+    String tileUrl = this.tileUrlTemplate.replace("{z}", Integer.toString(zoom))
+        .replace("{x}", Integer.toString(x)).replace("{y}", Integer.toString(y));
 
-    URL url = new URL(String.format(OSM_TILE_URL_TEMPLATE, zoom, x, y));
-
-    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-
-    connection.setRequestProperty("User-Agent", OSM_USER_AGENT);
-
-    connection.setRequestProperty("Accept", "image/png");
-
-    connection.setConnectTimeout(5000);
-    connection.setReadTimeout(10000);
+    HttpURLConnection connection = (HttpURLConnection) new URL(tileUrl).openConnection();
+    connection.setRequestMethod("GET");
+    connection.setRequestProperty("User-Agent", this.tileUserAgent);
+    connection.setRequestProperty("Referer", this.tileReferer);
+    connection.setRequestProperty("Accept", "image/png,image/*,*/*");
+    connection.setConnectTimeout(this.tileTimeoutMs);
+    connection.setReadTimeout(this.tileTimeoutMs);
 
     int status = connection.getResponseCode();
+    String contentType = connection.getContentType();
 
-    if (status != 200) {
-      throw new IOException("OSM tile download failed: HTTP " + status + " for " + url);
+    LOGGER.info("Tile request url={}, status={}, contentType={}, cacheDir={}", tileUrl, status,
+        contentType, this.tileCacheDir);
+
+    boolean imageContentType = contentType != null
+        && (contentType.toLowerCase().contains("image/png")
+            || contentType.toLowerCase().contains("image/jpeg")
+            || contentType.toLowerCase().contains("image/jpg"));
+
+    if (status != HttpURLConnection.HTTP_OK || !imageContentType) {
+      this.logErrorBody(connection, tileUrl, status, contentType);
+      return null;
     }
 
     try (InputStream inputStream = connection.getInputStream()) {
-      return ImageIO.read(inputStream);
+      BufferedImage tile = ImageIO.read(inputStream);
+      if (tile == null) {
+        LOGGER.warn("Tile decode failed for url={}", tileUrl);
+      }
+      return tile;
+    } finally {
+      connection.disconnect();
     }
+  }
+
+  private void logErrorBody(HttpURLConnection connection, String tileUrl, int status,
+      String contentType) throws IOException {
+    String responseBody = "";
+    try (InputStream errorStream = connection.getErrorStream()) {
+      if (errorStream != null) {
+        responseBody = new String(errorStream.readAllBytes(), StandardCharsets.UTF_8);
+        responseBody = responseBody.replaceAll("\\s+", " ").trim();
+      }
+    }
+
+    if (responseBody.length() > 180) {
+      responseBody = responseBody.substring(0, 180) + "...";
+    }
+
+    LOGGER.warn("Tile rejected url={}, status={}, contentType={}, body={}", tileUrl, status,
+        contentType, responseBody);
+  }
+
+  private void drawMissingTilePlaceholder(Graphics2D graphics, int x, int y, int size) {
+    graphics.setColor(Color.WHITE);
+    graphics.fillRect(x, y, size, size);
+    graphics.setColor(new Color(210, 210, 210));
+    graphics.drawRect(x, y, size, size);
   }
 
   private static double lonToTileX(double lon, int zoom) {
