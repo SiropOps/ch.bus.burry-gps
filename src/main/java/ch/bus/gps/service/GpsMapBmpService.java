@@ -9,6 +9,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -31,11 +32,8 @@ public class GpsMapBmpService {
   private static final int TILE_SIZE = 256;
   private static final int MIN_ZOOM = 0;
   private static final int MAX_ZOOM = 19;
-  private static final int MAP_WHITE_THRESHOLD = 245;
-  private static final int MAP_LIGHT_GRAY_THRESHOLD = 220;
-  private static final int MAP_MEDIUM_GRAY_THRESHOLD = 190;
-  private static final int MAP_LABEL_THRESHOLD = 160;
-  private static final int MAP_DARK_THRESHOLD = 120;
+  private static final int TRACK_HALO_STROKE_WIDTH = 11;
+  private static final int TRACK_STROKE_WIDTH = 6;
   private static final double BBOX_PADDING_RATIO = 0.15D;
   private static final double MIN_GEO_SPAN = 0.0001D;
   private static final double MIN_TILE_SPAN = 0.0000001D;
@@ -58,16 +56,21 @@ public class GpsMapBmpService {
   private int tileTimeoutMs;
 
   public byte[] createBmpFromGpsPoints(List<GpsDTO> gpsPoints) throws IOException {
-    BufferedImage bufferedImage =
+    BufferedImage mapImage =
         new BufferedImage(INKPLATE_WIDTH, INKPLATE_HEIGHT, BufferedImage.TYPE_INT_RGB);
 
-    Graphics2D graphics = bufferedImage.createGraphics();
+    Graphics2D graphics = mapImage.createGraphics();
 
-    graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+    graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+    graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+        RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+    graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
     graphics.setColor(Color.WHITE);
     graphics.fillRect(0, 0, INKPLATE_WIDTH, INKPLATE_HEIGHT);
 
     List<Point2D.Double> geoPoints = this.extractGeoPoints(gpsPoints);
+    LOGGER.info("Creating GPS map image: sourceWidth={}, sourceHeight={}, gpsPoints={}",
+        mapImage.getWidth(), mapImage.getHeight(), geoPoints.size());
 
     if (!geoPoints.isEmpty()) {
       BBox bbox = this.computeExpandedBBox(geoPoints);
@@ -75,54 +78,155 @@ public class GpsMapBmpService {
       MapViewport viewport = this.computeViewport(bbox, zoom);
 
       this.drawOsmTiles(graphics, viewport);
-      this.simplifyMapForEpaper(bufferedImage);
       this.drawTrack(graphics, geoPoints, viewport);
+      LOGGER.info("GPS track drawn: points={}", geoPoints.size());
     }
 
     graphics.dispose();
 
-    BufferedImage binaryImage =
-        new BufferedImage(INKPLATE_WIDTH, INKPLATE_HEIGHT, BufferedImage.TYPE_INT_RGB);
+    return this.convertToInkplateBmp(mapImage);
+  }
 
-    Graphics2D binaryGraphics = binaryImage.createGraphics();
-    binaryGraphics.drawImage(bufferedImage, 0, 0, null);
-    binaryGraphics.dispose();
+  private byte[] convertToInkplateBmp(BufferedImage sourceImage) throws IOException {
+    LOGGER.info("Converting map to Inkplate BMP: sourceWidth={}, sourceHeight={}",
+        sourceImage.getWidth(), sourceImage.getHeight());
 
+    BufferedImage fittedImage = this.fitOrCrop(sourceImage, INKPLATE_WIDTH, INKPLATE_HEIGHT);
+    int[][] grayscale = this.toGrayscaleAutoContrast(fittedImage);
+    BufferedImage binaryImage = this.floydSteinbergDither(grayscale);
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+
+    this.write1BitBmp(binaryImage, outputStream);
+
+    LOGGER.info("Inkplate BMP written: finalWidth={}, finalHeight={}, bytes={}",
+        binaryImage.getWidth(), binaryImage.getHeight(), outputStream.size());
+    return outputStream.toByteArray();
+  }
+
+  private BufferedImage fitOrCrop(BufferedImage sourceImage, int targetWidth, int targetHeight) {
+    BufferedImage fittedImage = new BufferedImage(targetWidth, targetHeight,
+        BufferedImage.TYPE_INT_RGB);
+    Graphics2D graphics = fittedImage.createGraphics();
+
+    graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+        RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+    graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+    graphics.setColor(Color.WHITE);
+    graphics.fillRect(0, 0, targetWidth, targetHeight);
+
+    double scale = Math.max((double) targetWidth / sourceImage.getWidth(),
+        (double) targetHeight / sourceImage.getHeight());
+    int scaledWidth = (int) Math.round(sourceImage.getWidth() * scale);
+    int scaledHeight = (int) Math.round(sourceImage.getHeight() * scale);
+    int x = (targetWidth - scaledWidth) / 2;
+    int y = (targetHeight - scaledHeight) / 2;
+
+    graphics.drawImage(sourceImage, x, y, scaledWidth, scaledHeight, null);
+    graphics.dispose();
+
+    LOGGER.info("Map fitted for Inkplate: finalWidth={}, finalHeight={}, scale={}",
+        targetWidth, targetHeight, scale);
+    return fittedImage;
+  }
+
+  private int[][] toGrayscaleAutoContrast(BufferedImage image) {
+    int width = image.getWidth();
+    int height = image.getHeight();
+    int[][] grayscale = new int[height][width];
+    int min = 255;
+    int max = 0;
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        int rgb = image.getRGB(x, y);
+        int gray = luminance(rgb);
+
+        grayscale[y][x] = gray;
+        min = Math.min(min, gray);
+        max = Math.max(max, gray);
+      }
+    }
+
+    if (max <= min) {
+      LOGGER.info("Map autocontrast skipped: minGray={}, maxGray={}", min, max);
+      return grayscale;
+    }
+
+    double range = max - min;
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        grayscale[y][x] = clampToByte((int) Math.round((grayscale[y][x] - min) * 255.0D
+            / range));
+      }
+    }
+
+    LOGGER.info("Map autocontrast applied: minGray={}, maxGray={}", min, max);
+    return grayscale;
+  }
+
+  private BufferedImage floydSteinbergDither(int[][] grayscale) {
+    int height = grayscale.length;
+    int width = grayscale[0].length;
+    double[] values = new double[width * height];
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        values[(y * width) + x] = grayscale[y][x];
+      }
+    }
+
+    BufferedImage binaryImage = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_BINARY);
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        int index = (y * width) + x;
+        double oldValue = values[index];
+        int newValue = oldValue < 128.0D ? 0 : 255;
+        double error = oldValue - newValue;
+
+        binaryImage.setRGB(x, y, newValue == 0 ? Color.BLACK.getRGB() : Color.WHITE.getRGB());
+
+        if (x + 1 < width) {
+          values[index + 1] += error * 7.0D / 16.0D;
+        }
+        if (y + 1 < height) {
+          if (x > 0) {
+            values[index + width - 1] += error * 3.0D / 16.0D;
+          }
+          values[index + width] += error * 5.0D / 16.0D;
+          if (x + 1 < width) {
+            values[index + width + 1] += error * 1.0D / 16.0D;
+          }
+        }
+      }
+    }
+
+    return binaryImage;
+  }
+
+  private void write1BitBmp(BufferedImage binaryImage, OutputStream outputStream)
+      throws IOException {
+    if (binaryImage.getType() != BufferedImage.TYPE_BYTE_BINARY) {
+      throw new IOException("Inkplate BMP source image must be TYPE_BYTE_BINARY");
+    }
 
     boolean ok = ImageIO.write(binaryImage, "bmp", outputStream);
     if (!ok) {
       throw new IOException("No ImageIO writer found for BMP format");
     }
-
-    return outputStream.toByteArray();
   }
 
-  private void simplifyMapForEpaper(BufferedImage image) {
-    for (int y = 0; y < image.getHeight(); y++) {
-      for (int x = 0; x < image.getWidth(); x++) {
-        Color c = new Color(image.getRGB(x, y));
+  private static int luminance(int rgb) {
+    int red = (rgb >> 16) & 0xFF;
+    int green = (rgb >> 8) & 0xFF;
+    int blue = rgb & 0xFF;
 
-        int gray = (int) ((c.getRed() * 0.299) + (c.getGreen() * 0.587) + (c.getBlue() * 0.114));
+    return clampToByte((int) Math.round((red * 0.299D) + (green * 0.587D)
+        + (blue * 0.114D)));
+  }
 
-        int out;
-        if (gray > MAP_WHITE_THRESHOLD) {
-          out = 255;
-        } else if (gray > MAP_LIGHT_GRAY_THRESHOLD) {
-          out = 245;
-        } else if (gray > MAP_MEDIUM_GRAY_THRESHOLD) {
-          out = 220;
-        } else if (gray > MAP_LABEL_THRESHOLD) {
-          out = 170;
-        } else if (gray > MAP_DARK_THRESHOLD) {
-          out = 90;
-        } else {
-          out = 0;
-        }
-
-        image.setRGB(x, y, new Color(out, out, out).getRGB());
-      }
-    }
+  private static int clampToByte(int value) {
+    return Math.max(0, Math.min(255, value));
   }
 
   private List<Point2D.Double> extractGeoPoints(List<GpsDTO> gpsPoints) {
@@ -263,8 +367,7 @@ public class GpsMapBmpService {
   private void drawTrack(Graphics2D graphics, List<Point2D.Double> geoPoints,
       MapViewport viewport) {
 
-    graphics.setColor(Color.BLACK);
-    graphics.setStroke(new BasicStroke(7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+    graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
     List<Point2D.Double> scaledPoints = new ArrayList<>();
 
@@ -275,6 +378,20 @@ public class GpsMapBmpService {
       scaledPoints.add(new Point2D.Double(viewport.toPixelX(tileX), viewport.toPixelY(tileY)));
     }
 
+    graphics.setColor(Color.WHITE);
+    graphics.setStroke(new BasicStroke(TRACK_HALO_STROKE_WIDTH, BasicStroke.CAP_ROUND,
+        BasicStroke.JOIN_ROUND));
+    this.drawTrackLines(graphics, scaledPoints);
+    this.drawTrackPoints(graphics, scaledPoints, 6);
+
+    graphics.setColor(new Color(170, 0, 0));
+    graphics.setStroke(new BasicStroke(TRACK_STROKE_WIDTH, BasicStroke.CAP_ROUND,
+        BasicStroke.JOIN_ROUND));
+    this.drawTrackLines(graphics, scaledPoints);
+    this.drawTrackPoints(graphics, scaledPoints, 4);
+  }
+
+  private void drawTrackLines(Graphics2D graphics, List<Point2D.Double> scaledPoints) {
     for (int i = 1; i < scaledPoints.size(); i++) {
       Point2D.Double p1 = scaledPoints.get(i - 1);
       Point2D.Double p2 = scaledPoints.get(i);
@@ -282,13 +399,20 @@ public class GpsMapBmpService {
       graphics.drawLine((int) Math.round(p1.getX()), (int) Math.round(p1.getY()),
           (int) Math.round(p2.getX()), (int) Math.round(p2.getY()));
     }
+  }
 
+  private void drawTrackPoints(Graphics2D graphics, List<Point2D.Double> scaledPoints,
+      int radius) {
     for (Point2D.Double point : scaledPoints) {
-      int x = (int) Math.round(point.getX());
-      int y = (int) Math.round(point.getY());
-
-      graphics.fillOval(x - 3, y - 3, 7, 7);
+      this.drawTrackPoint(graphics, point, radius);
     }
+  }
+
+  private void drawTrackPoint(Graphics2D graphics, Point2D.Double point, int radius) {
+    int x = (int) Math.round(point.getX());
+    int y = (int) Math.round(point.getY());
+
+    graphics.fillOval(x - radius, y - radius, (radius * 2) + 1, (radius * 2) + 1);
   }
 
   private BufferedImage getTileOrNull(int zoom, int x, int y) {
