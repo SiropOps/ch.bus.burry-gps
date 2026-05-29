@@ -188,3 +188,42 @@ GRANT SELECT,USAGE ON SEQUENCE public.pgps_id_pgps_seq TO gps_buffer_user;
 -- gps_buffer_userQL database dump complete
 --
 
+CREATE MATERIALIZED VIEW public.vm_gps_points_filtered_by_minute AS
+ SELECT date_trunc('minute'::text, pgps."time") AS minute,
+    avg(pgps.speed) AS avg_speed,
+    avg(pgps.speed_error) FILTER (WHERE (pgps.speed_error = pgps.speed_error)) AS avg_speed_error,
+    public.st_setsrid(
+      public.st_makepoint(
+        avg(public.st_x(pgps.coordinate)),
+        avg(public.st_y(pgps.coordinate))
+      ),
+      4326
+    ) AS coordinate_avg_geom
+   FROM public.pgps
+  WHERE (
+    (
+      (pgps.speed_error IS NOT NULL)
+      AND (pgps.speed_error = pgps.speed_error)
+      AND ((pgps.speed - pgps.speed_error) > (1.4)::double precision)
+    )
+    OR (
+      (pgps.speed_error <> pgps.speed_error)
+      AND (pgps.speed > (1.4)::double precision)
+    )
+  )
+  GROUP BY (date_trunc('minute'::text, pgps."time"))
+  WITH NO DATA;
+
+ALTER MATERIALIZED VIEW public.vm_gps_points_filtered_by_minute
+  OWNER TO gps_buffer_user;
+
+CREATE INDEX idx_vm_gps_points_coordinate
+  ON public.vm_gps_points_filtered_by_minute
+  USING gist (coordinate_avg_geom);
+
+-- À faire après création si tu veux charger les données :
+REFRESH MATERIALIZED VIEW public.vm_gps_points_filtered_by_minute;
+
+-- Grant conseillé si l’autre base utilise gps_buffer_user :
+GRANT SELECT ON public.vm_gps_points_filtered_by_minute TO gps_buffer_user;
+
