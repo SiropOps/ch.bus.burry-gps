@@ -34,6 +34,7 @@ public class GpsMapBmpService {
   private static final int MAX_ZOOM = 19;
   private static final int TRACK_HALO_STROKE_WIDTH = 11;
   private static final int TRACK_STROKE_WIDTH = 6;
+  private static final double EARTH_RADIUS_METERS = 6371000.0D;
   private static final double BBOX_PADDING_RATIO = 0.15D;
   private static final double MIN_GEO_SPAN = 0.0001D;
   private static final double MIN_TILE_SPAN = 0.0000001D;
@@ -54,6 +55,9 @@ public class GpsMapBmpService {
 
   @Value("${gps.map.tile-timeout-ms:10000}")
   private int tileTimeoutMs;
+
+  @Value("${gps.map.track-max-segment-distance-meters:1500}")
+  private double trackMaxSegmentDistanceMeters;
 
   public byte[] createBmpFromGpsPoints(List<GpsDTO> gpsPoints) throws IOException {
     BufferedImage mapImage =
@@ -378,27 +382,52 @@ public class GpsMapBmpService {
       scaledPoints.add(new Point2D.Double(viewport.toPixelX(tileX), viewport.toPixelY(tileY)));
     }
 
+    List<Boolean> trackGaps = this.computeTrackGaps(geoPoints);
+
     graphics.setColor(Color.WHITE);
     graphics.setStroke(new BasicStroke(TRACK_HALO_STROKE_WIDTH, BasicStroke.CAP_ROUND,
         BasicStroke.JOIN_ROUND));
-    this.drawTrackLines(graphics, scaledPoints);
+    this.drawTrackLines(graphics, scaledPoints, trackGaps);
     this.drawTrackPoints(graphics, scaledPoints, 6);
 
     graphics.setColor(new Color(170, 0, 0));
     graphics.setStroke(new BasicStroke(TRACK_STROKE_WIDTH, BasicStroke.CAP_ROUND,
         BasicStroke.JOIN_ROUND));
-    this.drawTrackLines(graphics, scaledPoints);
+    this.drawTrackLines(graphics, scaledPoints, trackGaps);
     this.drawTrackPoints(graphics, scaledPoints, 4);
   }
 
-  private void drawTrackLines(Graphics2D graphics, List<Point2D.Double> scaledPoints) {
+  private void drawTrackLines(Graphics2D graphics, List<Point2D.Double> scaledPoints,
+      List<Boolean> trackGaps) {
     for (int i = 1; i < scaledPoints.size(); i++) {
+      if (trackGaps.get(i - 1)) {
+        continue;
+      }
+
       Point2D.Double p1 = scaledPoints.get(i - 1);
       Point2D.Double p2 = scaledPoints.get(i);
 
       graphics.drawLine((int) Math.round(p1.getX()), (int) Math.round(p1.getY()),
           (int) Math.round(p2.getX()), (int) Math.round(p2.getY()));
     }
+  }
+
+  private List<Boolean> computeTrackGaps(List<Point2D.Double> geoPoints) {
+    List<Boolean> trackGaps = new ArrayList<>();
+
+    for (int i = 1; i < geoPoints.size(); i++) {
+      double distanceMeters = distanceMeters(geoPoints.get(i - 1), geoPoints.get(i));
+      boolean isGap = distanceMeters > this.trackMaxSegmentDistanceMeters;
+
+      if (isGap) {
+        LOGGER.info("GPS track segment skipped: distanceMeters={}, maxDistanceMeters={}",
+            Math.round(distanceMeters), this.trackMaxSegmentDistanceMeters);
+      }
+
+      trackGaps.add(isGap);
+    }
+
+    return trackGaps;
   }
 
   private void drawTrackPoints(Graphics2D graphics, List<Point2D.Double> scaledPoints,
@@ -554,6 +583,20 @@ public class GpsMapBmpService {
     double n = Math.PI - (2.0D * Math.PI * tileY) / (1 << zoom);
 
     return Math.toDegrees(Math.atan(Math.sinh(n)));
+  }
+
+  private static double distanceMeters(Point2D.Double point1, Point2D.Double point2) {
+    double lat1 = Math.toRadians(point1.getY());
+    double lat2 = Math.toRadians(point2.getY());
+    double deltaLat = Math.toRadians(point2.getY() - point1.getY());
+    double deltaLon = Math.toRadians(point2.getX() - point1.getX());
+
+    double a = (Math.sin(deltaLat / 2.0D) * Math.sin(deltaLat / 2.0D))
+        + (Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2.0D)
+            * Math.sin(deltaLon / 2.0D));
+    double c = 2.0D * Math.atan2(Math.sqrt(a), Math.sqrt(1.0D - a));
+
+    return EARTH_RADIUS_METERS * c;
   }
 
   private static double clamp(double value, double min, double max) {
