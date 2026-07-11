@@ -153,7 +153,7 @@ async def main():
             
                 logger.warning("Connexion BLE perdue")
         except Exception as e:
-            logger.error(f"Erreur dans la boucle BLE : {e}")
+            logger.exception("Erreur dans la boucle BLE (%s): %r", type(e).__name__, e)
         
         logger.info("Tentative de reconnexion dans 60 secondes...")
         await asyncio.sleep(60)
