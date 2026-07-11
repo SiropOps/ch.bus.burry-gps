@@ -25,6 +25,9 @@ ISO_TIME_PATTERN = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})
 
 BLE_DEVICE_NAME = "GPS-NanoESP32"
 CHAR_UUID = "00002a56-0000-1000-8000-00805f9b34fb"
+STARTUP_DELAY_SECONDS = 15
+BLE_CONNECT_TIMEOUT_SECONDS = 15 * 60
+BLE_RECONNECT_DELAY_SECONDS = 60
 
 sys.path.insert(0, "/usr/local/bin")
 
@@ -141,26 +144,44 @@ def handle_notify(_, data):
         sys.exit(os.EX_SOFTWARE)
 
 async def main():
+    disconnected_since = time.monotonic()
     while True:
         try:
             address = await find_device()
             async with BleakClient(address) as client:
                 logger.info("Connexion établie")
+                disconnected_since = None
                 await client.start_notify(CHAR_UUID, handle_notify)
                 logger.info("En attente de notifications...\n(CTRL+C pour quitter)")
                 while client.is_connected:
                     await asyncio.sleep(1)
             
                 logger.warning("Connexion BLE perdue")
+                disconnected_since = time.monotonic()
         except Exception as e:
             logger.exception("Erreur dans la boucle BLE (%s): %r", type(e).__name__, e)
+            if disconnected_since is None:
+                disconnected_since = time.monotonic()
         
-        logger.info("Tentative de reconnexion dans 60 secondes...")
-        await asyncio.sleep(60)
+        disconnected_duration = time.monotonic() - disconnected_since
+        remaining_seconds = BLE_CONNECT_TIMEOUT_SECONDS - disconnected_duration
+        if remaining_seconds <= 0:
+            raise TimeoutError(
+                f"Impossible de se connecter au périphérique BLE '{BLE_DEVICE_NAME}' "
+                f"après {BLE_CONNECT_TIMEOUT_SECONDS // 60} minutes"
+            )
+
+        sleep_seconds = min(BLE_RECONNECT_DELAY_SECONDS, remaining_seconds)
+        logger.info(
+            "Tentative de reconnexion dans %s secondes... délai restant avant arrêt: %.0f secondes",
+            int(sleep_seconds),
+            remaining_seconds,
+        )
+        await asyncio.sleep(sleep_seconds)
 
 logger.info('Start Script at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
 
-time.sleep(10) # waiting cluster start
+time.sleep(STARTUP_DELAY_SECONDS) # waiting cluster start
 
 logger.info('Sleep end at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
 
@@ -189,7 +210,8 @@ if __name__ == '__main__':
                 try:
                     asyncio.run(main())
                 except Exception as e:
-                    logger.error('BLE error: ' + str(e))
+                    logger.exception("BLE error (%s): %r", type(e).__name__, e)
+                    sys.exit(os.EX_SOFTWARE)
             if is_connected:
                 connection.close()
             time.sleep(60)
