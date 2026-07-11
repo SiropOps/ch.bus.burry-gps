@@ -87,7 +87,7 @@ async def find_device():
     logger.info("Recherche du périphérique BLE...")
     devices = await BleakScanner.discover()
     for d in devices:
-        if BLE_DEVICE_NAME in d.name:
+        if d.name and BLE_DEVICE_NAME in d.name:
             logger.info(f"Appareil trouvé : {d.name} ({d.address})")
             return d.address
     raise BleDeviceNotFoundError(f"Appareil BLE '{BLE_DEVICE_NAME}' introuvable.")
