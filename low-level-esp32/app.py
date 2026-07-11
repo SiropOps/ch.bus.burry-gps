@@ -27,6 +27,7 @@ BLE_DEVICE_NAME = "GPS-NanoESP32"
 CHAR_UUID = "00002a56-0000-1000-8000-00805f9b34fb"
 STARTUP_DELAY_SECONDS = 15
 BLE_CONNECT_TIMEOUT_SECONDS = 15 * 60
+BLE_CLIENT_CONNECT_TIMEOUT_SECONDS = 30
 BLE_RECONNECT_DELAY_SECONDS = 60
 
 sys.path.insert(0, "/usr/local/bin")
@@ -34,6 +35,10 @@ sys.path.insert(0, "/usr/local/bin")
 # Deafults
 LOG_LEVEL = logging.INFO  # Could be e.g. "DEBUG" or "WARNING"
 LOG_FILENAME = "/app/fail/gps-ESP32.log"
+
+
+class BleDeviceNotFoundError(RuntimeError):
+    pass
 
 
 class MyLogger(object):
@@ -85,7 +90,7 @@ async def find_device():
         if BLE_DEVICE_NAME in d.name:
             logger.info(f"Appareil trouvé : {d.name} ({d.address})")
             return d.address
-    raise Exception(f"Appareil BLE '{BLE_DEVICE_NAME}' introuvable.")
+    raise BleDeviceNotFoundError(f"Appareil BLE '{BLE_DEVICE_NAME}' introuvable.")
 
 def handle_notify(_, data):
     try:
@@ -148,7 +153,7 @@ async def main():
     while True:
         try:
             address = await find_device()
-            async with BleakClient(address) as client:
+            async with BleakClient(address, timeout=BLE_CLIENT_CONNECT_TIMEOUT_SECONDS) as client:
                 logger.info("Connexion établie")
                 disconnected_since = None
                 await client.start_notify(CHAR_UUID, handle_notify)
@@ -158,6 +163,15 @@ async def main():
             
                 logger.warning("Connexion BLE perdue")
                 disconnected_since = time.monotonic()
+        except BleDeviceNotFoundError as e:
+            logger.warning("%s", e)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Timeout pendant la connexion BLE à %s (%s secondes). "
+                "BlueZ/DBus n'a pas répondu à temps.",
+                BLE_DEVICE_NAME,
+                BLE_CLIENT_CONNECT_TIMEOUT_SECONDS,
+            )
         except Exception as e:
             logger.exception("Erreur dans la boucle BLE (%s): %r", type(e).__name__, e)
             if disconnected_since is None:
