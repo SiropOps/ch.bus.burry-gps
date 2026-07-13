@@ -42,6 +42,12 @@ class BleDeviceNotFoundError(RuntimeError):
     pass
 
 
+def kmh_to_mps(speed):
+    if speed is None:
+        return None
+    return float(speed) / 3.6
+
+
 class MyLogger(object):
     '''
     Make a class we can use to capture stdout and sterr in the log
@@ -125,7 +131,7 @@ def handle_notify(_, data):
             "latitude": raw.get("lat"),
             "longitude": raw.get("lng"),
             "altitude": raw.get("alt"),
-            "speed": raw.get("speed"),
+            "speed": kmh_to_mps(raw.get("speed")),
             "track": raw.get("track"),
             "ept": raw.get("hdop"),
             "eps": raw.get("hdop"),
