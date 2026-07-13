@@ -29,6 +29,7 @@ STARTUP_DELAY_SECONDS = 15
 BLE_CONNECT_TIMEOUT_SECONDS = 15 * 60
 BLE_CLIENT_CONNECT_TIMEOUT_SECONDS = 30
 BLE_RECONNECT_DELAY_SECONDS = 60
+GPS_TYPE = "ESP32"
 
 sys.path.insert(0, "/usr/local/bin")
 
@@ -120,6 +121,7 @@ def handle_notify(_, data):
 
         # Mapping vers noms attendus par Java
         json_data = {
+            "gpsType": GPS_TYPE,
             "latitude": raw.get("lat"),
             "longitude": raw.get("lng"),
             "altitude": raw.get("alt"),
@@ -213,7 +215,7 @@ if __name__ == '__main__':
                     channel.basic_publish(exchange='',
                             routing_key='gps',
                             properties=pika.BasicProperties(content_type='application/json'),
-                            body='{"epd": NaN, "epx": 83.193, "epy": 116.417, "epv": 23.0, "altitude": 358.6, "eps": NaN, "longitude": 6.08235, "epc": NaN, "track": 353.79, "mode": 3, "time": "2019-09-14T22:06:19.000Z", "latitude": 46.237098333, "climb": NaN, "speed": 0.0, "ept": 0.005}')
+                            body='{"gpsType": "ESP32", "epd": NaN, "epx": 83.193, "epy": 116.417, "epv": 23.0, "altitude": 358.6, "eps": NaN, "longitude": 6.08235, "epc": NaN, "track": 353.79, "mode": 3, "time": "2019-09-14T22:06:19.000Z", "latitude": 46.237098333, "climb": NaN, "speed": 0.0, "ept": 0.005}')
                     is_connected = True
                     logger.info('RabbitMQ is started at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
                 else:

@@ -2,10 +2,13 @@ package ch.bus.gps.service;
 
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -17,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ch.bus.gps.component.GpsComponent;
 import ch.bus.gps.dto.GpsDTO;
+import ch.bus.gps.dto.GpsStatusDTO;
 import ch.bus.gps.dto.SpeakingClockDTO;
 import ch.bus.gps.entity.GpsPointFilteredByMinute;
 import ch.bus.gps.entity.Pgps;
@@ -40,6 +44,16 @@ public class GpsService {
   private static List<GpsDTO> CACHED_TRIPE = new ArrayList<>();
   private static boolean RUNNING = true;
   private static Pgps LAST = null;
+  private static final String GPS_TYPE_USB = "USB";
+  private static final String GPS_TYPE_ESP32 = "ESP32";
+  private static final long GPS_SIGNAL_TIMEOUT_MS = 3000;
+  private static final Map<String, Date> GPS_LAST_SIGNAL_BY_TYPE = new ConcurrentHashMap<>();
+  private static final Map<String, Boolean> GPS_RUNNING_BY_TYPE = new ConcurrentHashMap<>();
+
+  static {
+    GPS_RUNNING_BY_TYPE.put(GPS_TYPE_USB, false);
+    GPS_RUNNING_BY_TYPE.put(GPS_TYPE_ESP32, false);
+  }
 
   private Date speakingClockDate = null;
 
@@ -52,6 +66,8 @@ public class GpsService {
   public void receiveMessage(final GpsDTO gpsMessage) {
     if (gpsMessage == null || !RUNNING)
       return;
+
+    this.updateGpsSignal(gpsMessage);
 
     if (Optional.ofNullable(gpsMessage.getTime()).isPresent()) {
       speakingClockDate = gpsMessage.getTime();
@@ -83,6 +99,14 @@ public class GpsService {
 
   }
 
+  private void updateGpsSignal(GpsDTO gpsMessage) {
+    if (!Optional.ofNullable(gpsMessage.getGpsType()).isPresent())
+      return;
+
+    GPS_LAST_SIGNAL_BY_TYPE.put(gpsMessage.getGpsType(), new Date());
+    GPS_RUNNING_BY_TYPE.put(gpsMessage.getGpsType(), true);
+  }
+
   @Async
   @Scheduled(cron = "*/1 * * * * *")
   // each second.
@@ -90,7 +114,18 @@ public class GpsService {
     log.debug("manageReceiveMessage");
 
     this.gpsComponent.addOrSave(null);
+    this.updateGpsStatus();
 
+  }
+
+  private void updateGpsStatus() {
+    Date now = new Date();
+    GPS_RUNNING_BY_TYPE.forEach((gpsType, running) -> {
+      Date lastSignalDate = GPS_LAST_SIGNAL_BY_TYPE.get(gpsType);
+      GPS_RUNNING_BY_TYPE.put(gpsType,
+          Optional.ofNullable(lastSignalDate).isPresent()
+              && now.getTime() - lastSignalDate.getTime() <= GPS_SIGNAL_TIMEOUT_MS);
+    });
   }
 
   public void stop() {
@@ -146,6 +181,16 @@ public class GpsService {
 
   public List<GpsDTO> getAll() {
     return CACHED_TRIPE;
+  }
+
+  public List<GpsStatusDTO> getStatus() {
+    this.updateGpsStatus();
+
+    List<GpsStatusDTO> statuses = new ArrayList<>();
+    GPS_RUNNING_BY_TYPE.forEach((gpsType, running) -> statuses
+        .add(new GpsStatusDTO(gpsType, running, GPS_LAST_SIGNAL_BY_TYPE.get(gpsType))));
+    statuses.sort(Comparator.comparing(GpsStatusDTO::getGpsType));
+    return statuses;
   }
 
   public SpeakingClockDTO getSpeakingClock() {

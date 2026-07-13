@@ -10,6 +10,8 @@ public class GpsDTO implements Serializable {
 
   private static final long serialVersionUID = 1L;
 
+  private String gpsType;
+
   private Double latitude;// Latitude in degrees
   private Double epy;// Estimated latitude error - meters
 
@@ -33,6 +35,14 @@ public class GpsDTO implements Serializable {
   private Double epd;// Estimated direction error - degrees
 
   private Integer mode;
+
+  public String getGpsType() {
+    return gpsType;
+  }
+
+  public void setGpsType(String gpsType) {
+    this.gpsType = gpsType;
+  }
 
   public Double getLatitude() {
     return latitude;
@@ -156,10 +166,10 @@ public class GpsDTO implements Serializable {
 
   @Override
   public String toString() {
-    return "GpsDTO [latitude=" + latitude + ", epy=" + epy + ", longitude=" + longitude + ", epx="
-        + epx + ", altitude=" + altitude + ", epv=" + epv + ", speed=" + speed + ", eps=" + eps
-        + ", time=" + time + ", ept=" + ept + ", climb=" + climb + ", epc=" + epc + ", track="
-        + track + ", epd=" + epd + ", mode=" + mode + "]";
+    return "GpsDTO [gpsType=" + gpsType + ", latitude=" + latitude + ", epy=" + epy
+        + ", longitude=" + longitude + ", epx=" + epx + ", altitude=" + altitude + ", epv=" + epv
+        + ", speed=" + speed + ", eps=" + eps + ", time=" + time + ", ept=" + ept + ", climb="
+        + climb + ", epc=" + epc + ", track=" + track + ", epd=" + epd + ", mode=" + mode + "]";
   }
 
 }

@@ -26,6 +26,7 @@ LOG_LEVEL = logging.INFO  # Could be e.g. "DEBUG" or "WARNING"
 LOG_FILENAME = "/app/fail/pgps.log"
 
 FAIL_DIR = "/app/fail/"
+GPS_TYPE = "USB"
 
 
 class MyLogger(object):
@@ -74,6 +75,7 @@ class Data(object):
 
     def __init__(self, gpsp):
 
+        self.gpsType = GPS_TYPE
         self.latitude = gpsd.fix.latitude  # Latitude in degrees
         self.epy = gpsd.fix.epy  # Estimated latitude error - meters
 
@@ -169,7 +171,7 @@ if __name__ == '__main__':
                     channel.basic_publish(exchange='',
                             routing_key='gps',
                             properties=pika.BasicProperties(content_type='application/json'),
-                            body='{"epd": NaN, "epx": 83.193, "epy": 116.417, "epv": 23.0, "altitude": 358.6, "eps": NaN, "longitude": 6.08235, "epc": NaN, "track": 353.79, "mode": 3, "time": "2019-09-14T22:06:19.000Z", "latitude": 46.237098333, "climb": NaN, "speed": 0.0, "ept": 0.005}')
+                            body='{"gpsType": "USB", "epd": NaN, "epx": 83.193, "epy": 116.417, "epv": 23.0, "altitude": 358.6, "eps": NaN, "longitude": 6.08235, "epc": NaN, "track": 353.79, "mode": 3, "time": "2019-09-14T22:06:19.000Z", "latitude": 46.237098333, "climb": NaN, "speed": 0.0, "ept": 0.005}')
                     is_connected = True
                     logger.info('RabbitMQ is started at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
                 else:

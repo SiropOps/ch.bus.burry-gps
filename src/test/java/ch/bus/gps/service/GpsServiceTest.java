@@ -2,6 +2,7 @@ package ch.bus.gps.service;
 
 import static org.junit.Assert.assertNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.times;
@@ -10,6 +11,7 @@ import static org.mockito.Mockito.when;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,8 +22,10 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import ch.bus.gps.component.GpsComponent;
 import ch.bus.gps.dto.GpsDTO;
+import ch.bus.gps.dto.GpsStatusDTO;
 import ch.bus.gps.entity.GpsPointFilteredByMinute;
 import ch.bus.gps.repository.GpsPointFilteredByMinuteRepository;
 import ch.bus.gps.repository.PgpsRepository;
@@ -44,6 +48,16 @@ class GpsServiceTest {
   @BeforeEach
   void resetCache() {
     gpsService.getAll().clear();
+    getStaticMap("GPS_LAST_SIGNAL_BY_TYPE").clear();
+    Map<String, Boolean> gpsRunningByType = getStaticMap("GPS_RUNNING_BY_TYPE");
+    gpsRunningByType.clear();
+    gpsRunningByType.put("USB", false);
+    gpsRunningByType.put("ESP32", false);
+  }
+
+  @SuppressWarnings("unchecked")
+  private <T> Map<String, T> getStaticMap(String fieldName) {
+    return (Map<String, T>) ReflectionTestUtils.getField(GpsService.class, fieldName);
   }
 
   @Test
@@ -86,5 +100,40 @@ class GpsServiceTest {
     verify(gpsPointFilteredByMinuteRepository, times(1)).refreshMaterializedView();
     verify(gpsPointFilteredByMinuteRepository, times(1)).findAllByOrderByMinuteAsc();
     assertTrue(gpsService.getAll().isEmpty());
+  }
+
+  @Test
+  void receiveMessageShouldMarkGpsTypeAsRunning() {
+    GpsDTO message = new GpsDTO();
+    message.setGpsType("ESP32");
+    message.setTime(new Date());
+    message.setLatitude(46.2);
+    message.setLongitude(6.14);
+    message.setSpeed(0.0);
+
+    when(pgpsRepository.createPoint(6.14, 46.2))
+        .thenReturn(new GeometryFactory().createPoint(new Coordinate(6.14, 46.2)));
+
+    gpsService.receiveMessage(message);
+
+    GpsStatusDTO esp32Status = gpsService.getStatus().stream()
+        .filter(status -> "ESP32".equals(status.getGpsType()))
+        .findFirst()
+        .orElseThrow();
+
+    assertTrue(esp32Status.isRunning());
+  }
+
+  @Test
+  void getStatusShouldMarkGpsAsStoppedAfterTimeout() {
+    getStaticMap("GPS_LAST_SIGNAL_BY_TYPE").put("USB", new Date(System.currentTimeMillis() - 4000));
+    getStaticMap("GPS_RUNNING_BY_TYPE").put("USB", true);
+
+    GpsStatusDTO usbStatus = gpsService.getStatus().stream()
+        .filter(status -> "USB".equals(status.getGpsType()))
+        .findFirst()
+        .orElseThrow();
+
+    assertFalse(usbStatus.isRunning());
   }
 }

@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import ch.bus.gps.dto.GpsDTO;
+import ch.bus.gps.dto.GpsStatusDTO;
 import ch.bus.gps.dto.SpeakingClockDTO;
 import ch.bus.gps.service.GpsMapBmpService;
 import ch.bus.gps.service.GpsService;
@@ -44,6 +45,11 @@ public class GpsController {
   @GetMapping("/all")
   public ResponseEntity<List<GpsDTO>> getAll() {
     return new ResponseEntity<>(this.gpsService.getAll(), HttpStatus.OK);
+  }
+
+  @GetMapping("/status")
+  public ResponseEntity<List<GpsStatusDTO>> getStatus() {
+    return new ResponseEntity<>(this.gpsService.getStatus(), HttpStatus.OK);
   }
 
   @GetMapping(value = "/map.bmp")
