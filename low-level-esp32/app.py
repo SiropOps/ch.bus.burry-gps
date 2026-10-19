@@ -1,244 +1,336 @@
 #!/usr/bin/env python
-
-'''
-Created on 14 sept. 2019
-
-@author: SiropOps
-
-'''
-import itertools
-import json
-import logging.handlers
-import os
-import sys, traceback
-import threading
-from time import strftime, gmtime
-import time
-import uuid
+"""GPS BLE owner loop. Importing this module performs no I/O."""
 import asyncio
-from bleak import BleakClient, BleakScanner
-import pika
 import datetime
+import json
+import logging
+import logging.handlers
+import math
+import os
+from pathlib import Path
 import re
+import signal
+import time
+from dataclasses import dataclass
 
-ISO_TIME_PATTERN = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$")
+from bleak import BleakClient, BleakScanner
 
+from publishing import RabbitPublisher
+from runtime import BluetoothCleanupError, bounded
+
+logger = logging.getLogger(__name__)
 BLE_DEVICE_NAME = "GPS-NanoESP32"
 CHAR_UUID = "00002a56-0000-1000-8000-00805f9b34fb"
-STARTUP_DELAY_SECONDS = 15
-BLE_CONNECT_TIMEOUT_SECONDS = 15 * 60
-BLE_CLIENT_CONNECT_TIMEOUT_SECONDS = 30
-BLE_RECONNECT_DELAY_SECONDS = 60
 GPS_TYPE = "ESP32"
-
-sys.path.insert(0, "/usr/local/bin")
-
-# Deafults
-LOG_LEVEL = logging.INFO  # Could be e.g. "DEBUG" or "WARNING"
-LOG_FILENAME = "/app/fail/gps-ESP32.log"
+ISO_TIME_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
-class BleDeviceNotFoundError(RuntimeError):
-    pass
+def utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
 def kmh_to_mps(speed):
-    if speed is None:
-        return None
-    return float(speed) / 3.6
+    return None if speed is None else float(speed) / 3.6
 
 
-class MyLogger(object):
-    '''
-    Make a class we can use to capture stdout and sterr in the log
-    '''
-
-    def __init__(self, logger, level):
-        """Needs a logger and a logger level."""
-        self.logger = logger
-        self.level = level
-
-    def write(self, message):
-        # Only log if there is a message (not just a new line)
-        if message.rstrip() != "":
-            self.logger.log(self.level, message.rstrip())
-
-    def flush(self):
-        pass
-# Configure logging to log to a file, making a new file at midnight and keeping the last 3 day's data
-# Give the logger a unique name (good practice)
-logger = logging.getLogger(__name__)
-# Set the log level to LOG_LEVEL
-logger.setLevel(LOG_LEVEL)
-# Make a handler that writes to a file, making a new file at midnight and keeping 3 backups
-handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=2 * 1024 * 1024, backupCount=3)
-# Format each log message like this
-formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
-# Attach the formatter to the handler
-handler.setFormatter(formatter)
-# Attach the handler to the logger
-logger.addHandler(handler)
-
-console = logging.StreamHandler()
-console.setLevel(LOG_LEVEL)
-console.setFormatter(formatter)
-logger.addHandler(console)
-
-# Replace stdout with logging to file at INFO level
-sys.stdout = MyLogger(logger, logging.INFO)
-# Replace stderr with logging to file at ERROR level
-sys.stderr = MyLogger(logger, logging.ERROR)
-
-
-async def find_device():
-    logger.info("Recherche du périphérique BLE...")
-    devices = await BleakScanner.discover()
-    for d in devices:
-        if d.name and BLE_DEVICE_NAME in d.name:
-            logger.info(f"Appareil trouvé : {d.name} ({d.address})")
-            return d.address
-    raise BleDeviceNotFoundError(f"Appareil BLE '{BLE_DEVICE_NAME}' introuvable.")
-
-def handle_notify(_, data):
-    try:
-        raw = json.loads(data.decode())
-        
-        # Vérification du champ time
-        if "time" in raw:
-            time_str = raw["time"]
-            match = ISO_TIME_PATTERN.match(time_str)
-            current_year = datetime.datetime.utcnow().year
-
-            if match:
-                year, month, day = int(match[1]), int(match[2]), int(match[3])
-                if year == current_year and 1 <= month <= 12 and 1 <= day <= 31:
-                    try:
-                        dt = datetime.datetime.strptime(time_str, "%Y-%m-%dT%H:%M:%SZ")
-                        raw["time"] = dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-                    except Exception as e:
-                        logger.warning(f"Erreur parsing time malgré regex OK : {e}")
-                        raw["time"] = None
-                else:
-                    logger.warning(f"Date hors de l’année courante ou invalide : {time_str}")
-                    raw["time"] = None
-            else:
-                logger.warning(f"Time malformé ignoré : {time_str}")
-                raw["time"] = None
-
-        # Mapping vers noms attendus par Java
-        json_data = {
-            "gpsType": GPS_TYPE,
-            "latitude": raw.get("lat"),
-            "longitude": raw.get("lng"),
-            "altitude": raw.get("alt"),
-            "speed": kmh_to_mps(raw.get("speed")),
-            "track": raw.get("track"),
-            "ept": raw.get("hdop"),
-            "eps": raw.get("hdop"),
-            "epd": raw.get("hdop"),
-            "epx": raw.get("hdop"),
-            "epy": raw.get("hdop"),
-            "epv": raw.get("hdop"),
-            "epc": None,
-            "mode": 3,
-            "climb": None,
-            "time": raw.get("time")
-        }
-        
-        global channel
-
-        channel.basic_publish(exchange='',
-                                routing_key='gps',
-                                properties=pika.BasicProperties(content_type='application/json'),
-                                body=json.dumps(json_data))
-        # logger.info("Données reçues :\n%s", json.dumps(json_data, indent=2))
-    except Exception as e:
-        logger.warning("Erreur décodage JSON : %s | Brut : %s", e, data)
-        sys.exit(os.EX_SOFTWARE)
-
-async def main():
-    disconnected_since = time.monotonic()
-    while True:
+def decode_notification(data):
+    raw = json.loads(data.decode())
+    if "time" in raw:
+        value = raw["time"]
         try:
-            address = await find_device()
-            async with BleakClient(address, timeout=BLE_CLIENT_CONNECT_TIMEOUT_SECONDS) as client:
-                logger.info("Connexion établie")
-                disconnected_since = None
-                await client.start_notify(CHAR_UUID, handle_notify)
-                logger.info("En attente de notifications...\n(CTRL+C pour quitter)")
-                while client.is_connected:
-                    await asyncio.sleep(1)
-            
-                logger.warning("Connexion BLE perdue")
-                disconnected_since = time.monotonic()
-        except BleDeviceNotFoundError as e:
-            logger.warning("%s", e)
-        except asyncio.TimeoutError:
-            logger.warning(
-                "Timeout pendant la connexion BLE à %s (%s secondes). "
-                "BlueZ/DBus n'a pas répondu à temps.",
-                BLE_DEVICE_NAME,
-                BLE_CLIENT_CONNECT_TIMEOUT_SECONDS,
-            )
-        except Exception as e:
-            logger.exception("Erreur dans la boucle BLE (%s): %r", type(e).__name__, e)
-            if disconnected_since is None:
-                disconnected_since = time.monotonic()
-        
-        disconnected_duration = time.monotonic() - disconnected_since
-        remaining_seconds = BLE_CONNECT_TIMEOUT_SECONDS - disconnected_duration
-        if remaining_seconds <= 0:
-            raise TimeoutError(
-                f"Impossible de se connecter au périphérique BLE '{BLE_DEVICE_NAME}' "
-                f"après {BLE_CONNECT_TIMEOUT_SECONDS // 60} minutes"
-            )
+            if not isinstance(value, str) or not ISO_TIME_PATTERN.fullmatch(value):
+                raise ValueError
+            dt = datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+            if dt.year != datetime.datetime.now(datetime.timezone.utc).year:
+                raise ValueError
+            raw["time"] = dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        except ValueError:
+            raw["time"] = None
+    # Existing Java/RabbitMQ contract, including speed in m/s.
+    return {
+        "gpsType": GPS_TYPE, "latitude": raw.get("lat"), "longitude": raw.get("lng"),
+        "altitude": raw.get("alt"), "speed": kmh_to_mps(raw.get("speed")),
+        "track": raw.get("track"), "ept": raw.get("hdop"), "eps": raw.get("hdop"),
+        "epd": raw.get("hdop"), "epx": raw.get("hdop"), "epy": raw.get("hdop"),
+        "epv": raw.get("hdop"), "epc": None, "mode": 3, "climb": None,
+        "time": raw.get("time"),
+    }
 
-        sleep_seconds = min(BLE_RECONNECT_DELAY_SECONDS, remaining_seconds)
-        logger.info(
-            "Tentative de reconnexion dans %s secondes... délai restant avant arrêt: %.0f secondes",
-            int(sleep_seconds),
-            remaining_seconds,
-        )
-        await asyncio.sleep(sleep_seconds)
 
-logger.info('Start Script at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
+@dataclass(frozen=True)
+class Settings:
+    adapter: str = "hci0"
+    scan_seconds: float = 10
+    operation_timeout: float = 20
+    connect_timeout: float = 30
+    cleanup_timeout: float = 10
+    reconnect_delay: float = 60
+    reconnect_max: float = 900
+    failure_limit: int = 5
+    process_restart_delay: float = 60
+    health_interval: float = 30
+    notification_idle: float = 300
+    startup_delay: float = 15
 
-time.sleep(STARTUP_DELAY_SECONDS) # waiting cluster start
-
-logger.info('Sleep end at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
-
-if __name__ == '__main__':
-    while True:
-        try:
-            is_connected = False
+    @classmethod
+    def from_env(cls, source=None):
+        source = os.environ if source is None else source
+        values = {"adapter": source.get("BLUETOOTH_ADAPTER", "hci0")}
+        for field, env in (
+            ("scan_seconds", "BLE_SCAN_SECONDS"),
+            ("operation_timeout", "SCANNER_OPERATION_TIMEOUT_SECONDS"),
+            ("connect_timeout", "BLE_CLIENT_CONNECT_TIMEOUT_SECONDS"),
+            ("cleanup_timeout", "BLE_CLEANUP_TIMEOUT_SECONDS"),
+            ("reconnect_delay", "BLE_RECONNECT_DELAY_SECONDS"),
+            ("reconnect_max", "BLE_RECONNECT_MAX_SECONDS"),
+            ("failure_limit", "BLE_FAILURE_LIMIT"),
+            ("process_restart_delay", "BLE_PROCESS_RESTART_DELAY_SECONDS"),
+            ("health_interval", "HEALTH_INTERVAL_SECONDS"),
+            ("notification_idle", "BLE_NOTIFICATION_IDLE_SECONDS"),
+            ("startup_delay", "STARTUP_DELAY_SECONDS"),
+        ):
             try:
-                credentials = pika.PlainCredentials(os.environ['spring.rabbitmq.username'], os.environ['spring.rabbitmq.password'])
-                connection = pika.BlockingConnection(pika.ConnectionParameters(os.environ['spring.rabbitmq.host'], os.environ['spring.rabbitmq.port'], '/', credentials))
-                if connection.is_open:
-                    global channel
-                    channel = connection.channel()
-                    channel.queue_declare(queue='gps', durable=True)
-                    channel.basic_publish(exchange='',
-                            routing_key='gps',
-                            properties=pika.BasicProperties(content_type='application/json'),
-                            body='{"gpsType": "ESP32", "epd": NaN, "epx": 83.193, "epy": 116.417, "epv": 23.0, "altitude": 358.6, "eps": NaN, "longitude": 6.08235, "epc": NaN, "track": 353.79, "mode": 3, "time": "2019-09-14T22:06:19.000Z", "latitude": 46.237098333, "climb": NaN, "speed": 0.0, "ept": 0.005}')
-                    is_connected = True
-                    logger.info('RabbitMQ is started at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
-                else:
-                    logger.error('RabbitMQ is not connected at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
-            except Exception as e:
-                logger.error('RabbitMQ connection is fail at ' + strftime("%d-%m-%Y %H:%M:%S", gmtime()))
-            if is_connected:
-                try:
-                    asyncio.run(main())
-                except Exception as e:
-                    logger.exception("BLE error (%s): %r", type(e).__name__, e)
-                    sys.exit(os.EX_SOFTWARE)
-            if is_connected:
-                connection.close()
-            time.sleep(60)
-        except Exception as e:
-            logger.error('General error: ' + str(e))
-            sys.exit(os.EX_SOFTWARE)
+                value = float(source.get(env, getattr(cls(), field)))
+                if not math.isfinite(value) or value < 0 or (value == 0 and field != "startup_delay"):
+                    raise ValueError
+                if field == "failure_limit":
+                    if not value.is_integer():
+                        raise ValueError
+                    value = int(value)
+                values[field] = value
+            except (ValueError, TypeError):
+                raise ValueError(f"Invalid {env}") from None
+        if not re.fullmatch(r"hci\d+", values["adapter"]):
+            raise ValueError("Invalid BLUETOOTH_ADAPTER")
+        if values["reconnect_max"] < values["reconnect_delay"]:
+            raise ValueError("BLE_RECONNECT_MAX_SECONDS must be >= BLE_RECONNECT_DELAY_SECONDS")
+        return cls(**values)
 
-    sys.exit(os.EX_SOFTWARE)
+
+class GPSService:
+    def __init__(self, settings, publisher, scanner_factory=BleakScanner,
+                 client_factory=BleakClient, monotonic=time.monotonic, sleep=asyncio.sleep):
+        self.settings = settings
+        self.publisher = publisher
+        self.scanner_factory = scanner_factory
+        self.client_factory = client_factory
+        self.monotonic = monotonic
+        self.sleep = sleep
+        self.scanner_state = "stopped"
+        self.connection_state = "disconnected"
+        self.last_discovery = self.last_notification = None
+        self.discovery_at = self.notification_at = None
+        self.failures = self.absences = self.invalid_notifications = 0
+        self.recoveries = self.recovery_level = 0
+        self.notification_timeouts = 0
+        self.retry_delay = settings.reconnect_delay
+        self.next_health = 0
+
+    async def operation(self, awaitable, timeout):
+        return await bounded(awaitable, timeout, restart_delay=self.settings.process_restart_delay)
+
+    def health(self):
+        now = self.monotonic()
+        return {"timestamp": utc_now(), "adapter": self.settings.adapter,
+                "scanner": self.scanner_state, "connection": self.connection_state,
+                "last_discovery": self.last_discovery, "last_notification": self.last_notification,
+                "discovery_age_seconds": None if self.discovery_at is None else now - self.discovery_at,
+                "notification_age_seconds": None if self.notification_at is None else now - self.notification_at,
+                "last_gatt_read": None,
+                "consecutive_failures": self.failures, "absent_scans": self.absences,
+                "invalid_notifications": self.invalid_notifications,
+                "notification_timeouts": self.notification_timeouts,
+                "recoveries": self.recoveries, "recovery_level": self.recovery_level,
+                "retry_delay_seconds": self.retry_delay, "rabbitmq": self.publisher.health()}
+
+    def log_health(self):
+        if self.monotonic() >= self.next_health:
+            logger.info("GPS health %s", json.dumps(self.health()))
+            self.next_health = self.monotonic() + self.settings.health_interval
+
+    async def pause(self, seconds):
+        deadline = self.monotonic() + seconds
+        while self.monotonic() < deadline:
+            self.log_health()
+            await self.sleep(min(self.settings.health_interval, deadline - self.monotonic()))
+
+    async def find_device(self):
+        found = asyncio.Event()
+        target = None
+
+        def on_advertisement(device, advertisement):
+            nonlocal target
+            self.last_discovery = utc_now()
+            self.discovery_at = self.monotonic()
+            if BLE_DEVICE_NAME in (device.name or advertisement.local_name or ""):
+                target = device
+                found.set()
+
+        scanner = self.scanner_factory(detection_callback=on_advertisement,
+                                       bluez={"adapter": self.settings.adapter})
+        self.scanner_state = "starting"
+        uncertain = False
+        try:
+            try:
+                await self.operation(scanner.start(), self.settings.operation_timeout)
+            except TimeoutError:
+                uncertain = True
+                self.scanner_state = "cleanup_failed"
+                raise BluetoothCleanupError("Uncertain discovery ownership") from None
+            self.scanner_state = "running"
+            try:
+                await asyncio.wait_for(found.wait(), self.settings.scan_seconds)
+            except TimeoutError:
+                pass
+        finally:
+            if not uncertain:
+                self.scanner_state = "stopping"
+                try:
+                    await self.operation(scanner.stop(), self.settings.cleanup_timeout)
+                except Exception:
+                    self.scanner_state = "cleanup_failed"
+                    raise BluetoothCleanupError("Scanner cleanup failed") from None
+                self.scanner_state = "stopped"
+        return target
+
+    def handle_notify(self, _, data):
+        try:
+            payload = json.dumps(decode_notification(data))
+        except (ValueError, TypeError, AttributeError, OverflowError):
+            self.invalid_notifications += 1
+            if self.invalid_notifications == 1 or self.invalid_notifications % 100 == 0:
+                logger.warning("Invalid GPS notification discarded; count=%s", self.invalid_notifications)
+            return
+        self.last_notification = utc_now()
+        self.notification_at = self.monotonic()
+        self.failures = self.absences = 0
+        self.recovery_level = 0
+        self.retry_delay = self.settings.reconnect_delay
+        self.publisher.publish(payload)
+
+    async def session(self, device):
+        client = self.client_factory(device, timeout=self.settings.connect_timeout)
+        self.connection_state = "connecting"
+        try:
+            await self.operation(client.connect(), self.settings.connect_timeout)
+            await self.operation(client.start_notify(CHAR_UUID, self.handle_notify), self.settings.operation_timeout)
+            self.connection_state = "connected"
+            connected_at = self.monotonic()
+            logger.info("GPS notifications subscribed")
+            while client.is_connected:
+                self.log_health()
+                last_valid = max(connected_at, self.notification_at or connected_at)
+                if self.monotonic() - last_valid >= self.settings.notification_idle:
+                    self.notification_timeouts += 1
+                    logger.warning("GPS notifications silent; reconnecting local client only")
+                    break
+                await self.sleep(min(1, self.settings.health_interval))
+            logger.warning("GPS disconnected; awaiting return")
+        finally:
+            self.connection_state = "disconnecting"
+            try:
+                await self.operation(client.disconnect(), self.settings.cleanup_timeout)
+            except Exception:
+                self.connection_state = "cleanup_failed"
+                raise BluetoothCleanupError("GATT cleanup failed") from None
+            self.connection_state = "disconnected"
+
+    async def run(self):
+        try:
+            while True:
+                self.log_health()
+                try:
+                    device = await self.find_device()
+                    if device is None:
+                        self.absences += 1
+                        logger.info("GPS absent; normal waiting state; retry_in_seconds=%s", self.retry_delay)
+                    else:
+                        await self.session(device)
+                except BluetoothCleanupError:
+                    self.recovery_level = 2
+                    raise
+                except Exception as exc:
+                    self.failures += 1
+                    self.recoveries += 1
+                    self.recovery_level = 1
+                    logger.warning("GPS BLE operation failed (%s); consecutive_failures=%s recovery_level=1",
+                                   type(exc).__name__, self.failures)
+                    if self.failures >= self.settings.failure_limit:
+                        self.recovery_level = 2
+                        raise BluetoothCleanupError("Repeated BLE operation failures") from None
+                await self.pause(self.retry_delay)
+                self.retry_delay = min(self.retry_delay * 2, self.settings.reconnect_max)
+        finally:
+            logger.info("GPS final health %s", json.dumps(self.health()))
+
+
+async def run_service(settings, publisher):
+    async def supervised():
+        try:
+            await asyncio.sleep(settings.startup_delay)
+            await GPSService(settings, publisher).run()
+        except Exception as exc:
+            logger.error("GPS recovery_level=2 failure=%s; process exit after %s seconds",
+                         type(exc).__name__, settings.process_restart_delay)
+            await asyncio.sleep(settings.process_restart_delay)
+            raise
+
+    loop = asyncio.get_running_loop()
+    task = asyncio.create_task(supervised())
+    previous = {}
+    stopping = False
+
+    def stop(signum, frame):
+        nonlocal stopping
+        if not stopping:
+            stopping = True
+            loop.call_soon_threadsafe(task.cancel)
+
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        previous[signum] = signal.signal(signum, stop)
+    try:
+        await task
+    except asyncio.CancelledError:
+        if not stopping:
+            raise
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+
+
+def configure_logging():
+    logging.Formatter.converter = time.gmtime
+    formatter = logging.Formatter("%(asctime)sZ %(levelname)s %(message)s")
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    root.addHandler(console)
+    filename = os.environ.get("GPS_LOG_FILE", "/app/fail/gps-ESP32.log")
+    if filename:
+        Path(filename).parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.handlers.RotatingFileHandler(filename, maxBytes=2 * 1024 * 1024, backupCount=3)
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+    logging.getLogger("pika").setLevel(logging.CRITICAL)
+
+
+def main():
+    publisher = None
+    try:
+        configure_logging()
+        settings = Settings.from_env()
+        publisher = RabbitPublisher.from_env()
+        publisher.start()
+        asyncio.run(run_service(settings, publisher))
+        return 0
+    except Exception as exc:
+        logger.error("GPS process stopped (%s)", type(exc).__name__)
+        return 1
+    finally:
+        if publisher is not None:
+            publisher.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

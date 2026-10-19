@@ -1,19 +1,19 @@
-FROM python:3.9-slim
+FROM python:3.12-slim
+ENV PYTHONUNBUFFERED=1
+WORKDIR /app
 
-# Installer les dépendances système nécessaires à bleak
+# Build native dbus-fast only when no platform wheel is available.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bluez \
-    libglib2.0-dev \
-    dbus \
+    gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Installer bleak (et d'autres dépendances si tu veux)
-RUN pip install bleak
+# BlueZ and D-Bus stay on the host; no second daemon in this image.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+    && apt-get purge -y --auto-remove gcc libc6-dev
 
-RUN pip install pika==1.1.0 --upgrade
 
-# Copier ton script python (remplace par le bon nom)
-COPY app.py /app/app.py
-WORKDIR /app
+COPY app.py publishing.py runtime.py ./
+STOPSIGNAL SIGTERM
 
 CMD ["python", "app.py"]
