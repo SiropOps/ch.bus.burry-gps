@@ -73,7 +73,7 @@ public class GpsMapBmpService {
     graphics.fillRect(0, 0, INKPLATE_WIDTH, INKPLATE_HEIGHT);
 
     List<Point2D.Double> geoPoints = this.extractGeoPoints(gpsPoints);
-    LOGGER.info("Creating GPS map image: sourceWidth={}, sourceHeight={}, gpsPoints={}",
+    LOGGER.debug("Creating GPS map image: sourceWidth={}, sourceHeight={}, gpsPoints={}",
         mapImage.getWidth(), mapImage.getHeight(), geoPoints.size());
 
     if (!geoPoints.isEmpty()) {
@@ -83,7 +83,7 @@ public class GpsMapBmpService {
 
       this.drawOsmTiles(graphics, viewport);
       this.drawTrack(graphics, geoPoints, viewport);
-      LOGGER.info("GPS track drawn: points={}", geoPoints.size());
+      LOGGER.debug("GPS track drawn: points={}", geoPoints.size());
     }
 
     graphics.dispose();
@@ -92,7 +92,7 @@ public class GpsMapBmpService {
   }
 
   private byte[] convertToInkplateBmp(BufferedImage sourceImage) throws IOException {
-    LOGGER.info("Converting map to Inkplate BMP: sourceWidth={}, sourceHeight={}",
+    LOGGER.debug("Converting map to Inkplate BMP: sourceWidth={}, sourceHeight={}",
         sourceImage.getWidth(), sourceImage.getHeight());
 
     BufferedImage fittedImage = this.fitOrCrop(sourceImage, INKPLATE_WIDTH, INKPLATE_HEIGHT);
@@ -102,7 +102,7 @@ public class GpsMapBmpService {
 
     this.write1BitBmp(binaryImage, outputStream);
 
-    LOGGER.info("Inkplate BMP written: finalWidth={}, finalHeight={}, bytes={}",
+    LOGGER.debug("Inkplate BMP written: finalWidth={}, finalHeight={}, bytes={}",
         binaryImage.getWidth(), binaryImage.getHeight(), outputStream.size());
     return outputStream.toByteArray();
   }
@@ -128,7 +128,7 @@ public class GpsMapBmpService {
     graphics.drawImage(sourceImage, x, y, scaledWidth, scaledHeight, null);
     graphics.dispose();
 
-    LOGGER.info("Map fitted for Inkplate: finalWidth={}, finalHeight={}, scale={}",
+    LOGGER.debug("Map fitted for Inkplate: finalWidth={}, finalHeight={}, scale={}",
         targetWidth, targetHeight, scale);
     return fittedImage;
   }
@@ -152,7 +152,7 @@ public class GpsMapBmpService {
     }
 
     if (max <= min) {
-      LOGGER.info("Map autocontrast skipped: minGray={}, maxGray={}", min, max);
+      LOGGER.debug("Map autocontrast skipped: minGray={}, maxGray={}", min, max);
       return grayscale;
     }
 
@@ -164,7 +164,7 @@ public class GpsMapBmpService {
       }
     }
 
-    LOGGER.info("Map autocontrast applied: minGray={}, maxGray={}", min, max);
+    LOGGER.debug("Map autocontrast applied: minGray={}, maxGray={}", min, max);
     return grayscale;
   }
 
@@ -420,7 +420,7 @@ public class GpsMapBmpService {
       boolean isGap = distanceMeters > this.trackMaxSegmentDistanceMeters;
 
       if (isGap) {
-        LOGGER.info("GPS track segment skipped: distanceMeters={}, maxDistanceMeters={}",
+        LOGGER.debug("GPS track segment skipped: distanceMeters={}, maxDistanceMeters={}",
             Math.round(distanceMeters), this.trackMaxSegmentDistanceMeters);
       }
 
@@ -468,7 +468,7 @@ public class GpsMapBmpService {
 
       if (downloadedTile != null) {
         ImageIO.write(downloadedTile, "png", tilePath.toFile());
-        LOGGER.info("Cached tile {}", tilePath);
+        LOGGER.debug("Cached tile {}", tilePath);
       }
 
       return downloadedTile;
@@ -512,7 +512,7 @@ public class GpsMapBmpService {
     int status = connection.getResponseCode();
     String contentType = connection.getContentType();
 
-    LOGGER.info("Tile request url=" + tileUrl + ", status=" + status + ", contentType="
+    LOGGER.debug("Tile request url=" + tileUrl + ", status=" + status + ", contentType="
         + contentType + ", cacheDir=" + this.tileCacheDir);
 
     boolean imageContentType =

@@ -26,6 +26,74 @@ vrai n'est pas une preuve de notifications reçues. Le partage avec la passerell
 est permis par BlueZ ; il reste à valider sur le contrôleur réel. Il n'y a pas
 de verrou interprocessus ou d'exclusion pendant toute la connexion GPS.
 
+## Mise à jour du collecteur existant
+
+Commandes à exécuter sur l'hôte Linux depuis le dépôt. Le dossier du dépôt
+est `low-level-esp32/` ; utiliser `esp32/` si c'est son nom sur l'hôte.
+Il n'est plus nécessaire de modifier `app.py` pour configurer le service.
+
+Pour un premier déploiement seulement, créer le fichier de configuration :
+
+```sh
+cd low-level-esp32/
+cp -n gps.env.example gps.env
+chmod 600 gps.env
+vim gps.env
+```
+
+Renseigner les quatre valeurs `spring.rabbitmq.*` avec les identifiants
+existants (hôte `127.0.0.1`, port `5672`, utilisateur `rabbit` dans le
+déploiement fourni). Garder le mot de passe dans `gps.env`, ignoré par Git.
+Pour une mise à jour, conserver ce fichier et compléter uniquement les
+paramètres souhaités à partir de `gps.env.example`. Les nouveaux paramètres
+BLE ont déjà les valeurs par défaut indiquées ci-dessous.
+
+Depuis ce même dossier, construire l'image avant d'arrêter le service.
+Conserver l'ancien conteneur pour permettre un retour arrière ; choisir un
+autre suffixe si `low-level-esp32-gps-previous` existe déjà.
+
+```sh
+docker build -t siropops/low-level-esp32-gps .
+mkdir -p ~/fail-low-level
+docker stop -t 120 low-level-esp32-gps
+docker rename low-level-esp32-gps low-level-esp32-gps-previous
+docker run -d \
+  --net=host \
+  --privileged \
+  -v /var/run/dbus:/var/run/dbus \
+  --restart=always \
+  --stop-timeout 120 \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
+  --name low-level-esp32-gps \
+  --env-file gps.env \
+  -v ~/fail-low-level:/app/fail \
+  siropops/low-level-esp32-gps
+docker logs --tail 100 -f low-level-esp32-gps
+```
+
+Pour un premier déploiement, omettre les commandes `docker stop` et
+`docker rename`. `--privileged` est conservé ici depuis la commande de
+déploiement existante ; les nouveaux développements ne l'ajoutent pas comme
+prérequis. Le montage des logs existant est conservé.
+
+Vérifier les lignes `GPS health` : GPS allumé, `connection=connected`,
+`last_notification` qui évolue et `rabbitmq.connected=true`, puis
+`rabbitmq.last_publish_success` qui évolue. GPS éteint, l'absence et l'espacement
+progressif des scans sont normaux ; le processus doit rester actif.
+Le fichier tournant est `~/fail-low-level/gps-ESP32.log`.
+Quitter le suivi des logs avec Ctrl+C laisse le conteneur actif.
+
+Retour arrière si nécessaire :
+
+```sh
+docker stop -t 120 low-level-esp32-gps
+docker rm low-level-esp32-gps
+docker rename low-level-esp32-gps-previous low-level-esp32-gps
+docker start low-level-esp32-gps
+cd
+```
+
 ## Publications compatibles
 
 La queue durable `gps`, le vhost `/`, l'exchange vide, la routing key `gps` et le
