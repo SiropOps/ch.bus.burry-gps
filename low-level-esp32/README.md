@@ -71,8 +71,16 @@ L'ancien `BLE_CONNECT_TIMEOUT_SECONDS=900` interne, qui arrêtait le GPS après
 quinze minutes d'absence, est supprimé. Il ne correspond pas au nouveau plafond
 de reconnexion. Les valeurs sont validées sans afficher les secrets.
 Les délais RabbitMQ sont heartbeat 30 s, socket 5 s, pile 10 s et connexion
-bloquée 5 s. La fermeture attend le worker au plus 15 s ; s'il reste bloqué,
-le processus ferme finalement ses sockets à la sortie.
+bloquée 5 s. Chaque attente AMQP (ouverture du canal, déclaration, activation
+des confirmations, publication/confirmation et fermeture) est aussi bornée à
+10 s, même si le broker continue à envoyer ses heartbeats sans acquitter.
+Le worker interrompt ces attentes à l'arrêt avec un contrôle toutes les 0,2 s.
+Cette garde utilise deux points internes de Pika 1.3.2 : conserver les tests
+avec le serveur AMQP simulé lors d'une mise à jour de Pika.
+La fermeture attend le worker daemon au plus 15 s ; s'il reste bloqué,
+le processus ferme finalement ses sockets à la sortie. Aucune opération Pika
+ni journalisation par message abandonné n'a lieu dans le callback BLE.
+Les pertes sont comptées dans `rabbitmq.dropped` des logs `GPS health` périodiques.
 
 ## Logs et santé
 
@@ -120,6 +128,8 @@ Deployment Kubernetes Java.
 La procédure **commune aux deux services**, le diagnostic, les critères de
 validation, le rollback conservant les anciens conteneurs et l'annexe reboot
 sont dans [BLE_RELIABILITY.md de la passerelle](../../ch.bus.bluetooth-mqtt/BLE_RELIABILITY.md).
+La vérification finale RabbitMQ/coexistence et ses résultats sont dans
+[BLE_FINAL_VALIDATION.md](../../ch.bus.bluetooth-mqtt/BLE_FINAL_VALIDATION.md).
 Ces procédures sont manuelles ; aucun déploiement ni commande sur `hiva-oa`
 n'est exécuté par ce travail. Réaliser un essai 48–72 h puis plusieurs semaines,
 avec GPS actif/éteint et tous les capteurs, avant de conclure à la stabilité.

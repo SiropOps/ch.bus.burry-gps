@@ -122,5 +122,7 @@ def test_rabbit_credentials_and_network_deadlines_from_env(monkeypatch):
         monkeypatch.setenv("spring.rabbitmq." + name, value)
     publisher = RabbitPublisher.from_env()
     assert publisher.parameters.heartbeat == 30
+    assert publisher.parameters.socket_timeout == 5
     assert publisher.parameters.stack_timeout == 10
     assert publisher.parameters.blocked_connection_timeout == 5
+    assert publisher.parameters.connection_attempts == 1

@@ -11,14 +11,52 @@ import pika
 logger = logging.getLogger(__name__)
 
 
+class DeadlineConnection(pika.BlockingConnection):
+    """Bound AMQP RPCs even when a peer sends heartbeats but withholds replies.
+
+    Pika 1.3.2 has no public RPC/confirmation deadline. Its public call_later
+    callbacks are deferred during BlockingChannel RPCs, so use the underlying
+    I/O timer and Pika's own stream termination/cleanup path. Keep this small
+    adapter covered by real-Pika tests when upgrading the pinned dependency.
+    All access, including termination, stays in the owning RabbitMQ thread.
+    """
+    operation_timeout = 10
+    stop_poll_interval = 0.2
+
+    def __init__(self, parameters, stopping):
+        self.stopping = stopping
+        super().__init__(parameters)
+
+    def _flush_output(self, *waiters):
+        loop = self._impl.ioloop
+        deadline = time.monotonic() + self.operation_timeout
+        timer = None
+
+        def check():
+            nonlocal timer
+            remaining = deadline - time.monotonic()
+            if self.stopping.is_set():
+                self._impl._terminate_stream(InterruptedError("RabbitMQ worker stopping"))
+            elif remaining <= 0:
+                self._impl._terminate_stream(TimeoutError("RabbitMQ operation deadline exceeded"))
+            else:
+                timer = loop.call_later(min(self.stop_poll_interval, remaining), check)
+
+        timer = loop.call_later(min(self.stop_poll_interval, self.operation_timeout), check)
+        try:
+            return super()._flush_output(*waiters)
+        finally:
+            loop.remove_timeout(timer)
+
+
 class RabbitPublisher:
-    def __init__(self, parameters, connection_factory=pika.BlockingConnection, max_pending=128):
+    def __init__(self, parameters, connection_factory=None, max_pending=128):
         self.parameters = parameters
-        self.connection_factory = connection_factory
         self.max_pending = max_pending
         self.pending = deque()
         self.lock = threading.Lock()
         self.stopping = threading.Event()
+        self.connection_factory = connection_factory or (lambda params: DeadlineConnection(params, self.stopping))
         self.thread = None
         self.connected = False
         self.failures = self.dropped = 0
