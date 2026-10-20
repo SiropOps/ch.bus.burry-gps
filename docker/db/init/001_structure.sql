@@ -181,6 +181,26 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.pgps TO gps_buffer_user;
 
 GRANT SELECT,USAGE ON SEQUENCE public.pgps_id_pgps_seq TO gps_buffer_user;
 
+--
+-- TOC entry 249 (class 1259 OID 31564)
+-- Name: vm_gps_points_filtered_by_minute; Type: MATERIALIZED VIEW; Schema: public; Owner: postgres
+--
+
+CREATE MATERIALIZED VIEW public.vm_gps_points_filtered_by_minute AS
+ SELECT date_trunc('minute'::text, "time") AS minute,
+    avg(speed) AS avg_speed,
+    avg(speed_error) FILTER (WHERE (speed_error = speed_error)) AS avg_speed_error,
+    public.st_setsrid(public.st_makepoint(avg(public.st_x((coordinate)::public.geometry)), avg(public.st_y((coordinate)::public.geometry))), 4326) AS coordinate_avg_geom
+   FROM public.pgps
+  WHERE (((speed_error IS NOT NULL) AND (speed_error = speed_error) AND ((speed - speed_error) > (1.4)::double precision)) OR ((speed_error <> speed_error) AND (speed > (1.4)::double precision)))
+  GROUP BY (date_trunc('minute'::text, "time"))
+  WITH NO DATA;
+
+
+ALTER MATERIALIZED VIEW public.vm_gps_points_filtered_by_minute OWNER TO gps_buffer_user;
+
+CREATE INDEX idx_vm_gps_points_coordinate ON public.vm_gps_points_filtered_by_minute USING gist (coordinate_avg_geom);
+
 
 -- Completed on 2019-09-05 09:49:18
 
